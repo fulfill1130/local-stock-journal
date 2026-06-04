@@ -1,0 +1,72 @@
+﻿<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ instrument.ticker }} 歷史行情</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20260517-history-2">
+</head>
+<body>
+  {% set token = request.args.get('token') %}
+  {% macro with_token(url) -%}
+    {{ url ~ ('?token=' ~ token|urlencode if token else '') }}
+  {%- endmacro %}
+
+  <main class="shell">
+    <header class="topbar database-topbar">
+      <a class="icon-button top-link" href="{{ with_token('/database') }}">資料庫</a>
+      <h1>{{ instrument.ticker }} 歷史行情</h1>
+      <span class="topbar-spacer"></span>
+    </header>
+
+    <section class="hero database-hero">
+      <div>
+        <p class="muted">{{ instrument.name }} · {{ instrument.symbol }}</p>
+        <div class="hero-value" id="history-row-count">N/A</div>
+        <div class="hero-sub">
+          <span>起始 <strong id="history-first-date">N/A</strong></span>
+          <span>最新 <strong id="history-last-date">N/A</strong></span>
+          <span>來源 <strong id="history-source">N/A</strong></span>
+        </div>
+      </div>
+      <div class="hero-side">
+        <span class="status-dot"></span>
+        <span id="history-updated-at">讀取中</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title">
+        <div>
+          <h2>OHLCV 日線資料</h2>
+          <span class="muted">目前列出中央資料庫已寫入的官方日線資料</span>
+        </div>
+      </div>
+      <div class="history-table-wrap">
+        <table class="history-table">
+          <thead>
+            <tr>
+              <th>日期</th>
+              <th>開盤</th>
+              <th>最高</th>
+              <th>最低</th>
+              <th>收盤</th>
+              <th>成交股數</th>
+              <th>成交金額</th>
+              <th>成交筆數</th>
+            </tr>
+          </thead>
+          <tbody id="history-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    window.HISTORY_TICKER = {{ instrument.ticker | tojson }};
+  </script>
+  <script src="{{ url_for('static', filename='history.js') }}?v=20260517-history-2"></script>
+</body>
+</html>
+
+

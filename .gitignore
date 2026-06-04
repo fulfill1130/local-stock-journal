@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local runtime data and private account records
+data/
+output/
+到現在的買賣/
+測試/
+
+# Logs, caches, generated files
+*.log
+*.sqlite
+*.sqlite3
+*.db
+*.tmp
+*.bak
+*.exe
+
+# Local OS/editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+
+# Attachments and documents that may contain private financial data
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.webp

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>股利資料庫</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20260602-dividends-5">
+</head>
+<body>
+  {% set token = request.args.get('token') %}
+  {% macro with_token(url) -%}
+    {{ url ~ ('?token=' ~ token|urlencode if token else '') }}
+  {%- endmacro %}
+
+  <main class="shell">
+    <header class="topbar database-topbar">
+      <a class="icon-button top-link" href="{{ with_token('/son') }}">兒子</a>
+      <h1>股利資料庫</h1>
+      <a class="icon-button top-link" href="{{ with_token('/mom') }}">媽媽</a>
+    </header>
+
+    <nav class="database-tabs" aria-label="資料庫頁籤">
+      <a class="database-tab" href="{{ with_token('/database') }}">股票資料</a>
+      <a class="database-tab active" href="{{ with_token('/database/dividends') }}">股利資料</a>
+    </nav>
+
+    <section id="data-status-bar" class="data-status-bar" aria-label="資料更新狀態"></section>
+
+    <section class="hero database-hero">
+      <div>
+        <p class="muted">ETF 股利資料</p>
+        <div class="hero-value" id="dividend-record-count">N/A</div>
+        <div class="hero-sub">
+          <span>ETF 數 <strong id="dividend-ticker-count">N/A</strong></span>
+          <span>最近除息 <strong id="latest-ex-date">N/A</strong></span>
+          <span>每單位 <strong id="latest-dividend">N/A</strong></span>
+        </div>
+      </div>
+      <div class="hero-side">
+        <span class="status-dot"></span>
+        <span id="dividend-updated-at">讀取中</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title">
+        <div>
+          <h2>新增股票標的</h2>
+          <span class="muted">新增只寫入本機清單，不會立刻抓 API；按該標的更新才會抓 Yahoo 股利</span>
+        </div>
+      </div>
+      <form id="dividend-target-form" class="database-form dividend-form">
+        <label>
+          <span>股票代碼</span>
+          <input id="dividend-new-ticker" type="text" inputmode="latin" autocomplete="off" placeholder="例如 00919" required>
+        </label>
+        <label>
+          <span>名稱</span>
+          <input id="dividend-new-name" type="text" autocomplete="off" placeholder="可空白，之後更新會補資料">
+        </label>
+        <label>
+          <span>Yahoo suffix</span>
+          <select id="dividend-new-suffix">
+            <option value=".TW">.TW 上市 / ETF</option>
+            <option value=".TWO">.TWO 上櫃</option>
+          </select>
+        </label>
+        <button class="primary-button" type="submit">加入清單</button>
+        <p id="dividend-status" class="muted database-status"></p>
+      </form>
+      <div class="dividend-bulk-actions">
+        <button id="dividend-refresh-all" class="primary-button full-button" type="button">一鍵更新全部 Yahoo 股利</button>
+        <span class="muted">逐檔寫入更新時間；沒抓到或失敗會顯示在各自卡片</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title database-section-title">
+        <div>
+          <h2 id="dividend-list-title">ETF 股利摘要</h2>
+          <span class="muted" id="dividend-source">來源：本機股利資料庫</span>
+        </div>
+      </div>
+      <div id="dividend-list" class="dividend-list"></div>
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='dividends.js') }}?v=20260602-dividends-5"></script>
+</body>
+</html>

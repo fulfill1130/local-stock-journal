@@ -1,0 +1,229 @@
+﻿<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ profile.label }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20260604-holding-collapse-1">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="icon-button top-link" href="{{ url_for('database_index', token=request.args.get('token')) if request.args.get('token') else url_for('database_index') }}">資料庫</a>
+      <h1 id="app-title">{{ profile.label }}</h1>
+      <button id="refresh-button" class="icon-button" type="button" aria-label="重新整理">更新</button>
+    </header>
+
+    <section id="data-status-bar" class="data-status-bar" aria-label="資料更新狀態"></section>
+
+    <section class="hero">
+      <div>
+        <p class="muted">持股總市值</p>
+        <div class="hero-value" id="total-market-value">N/A</div>
+        <div class="hero-sub">
+          <span>總損益 <strong id="total-pnl">N/A</strong></span>
+          <span id="total-pnl-pct">N/A</span>
+        </div>
+      </div>
+      <div class="hero-side">
+        <span class="status-dot"></span>
+        <span id="updated-at">尚未更新</span>
+      </div>
+    </section>
+
+    <section class="mini-grid">
+      <article class="mini-card cash-card">
+        <div class="mini-card-head">
+          <span class="mini-label">可用資金</span>
+          <button id="cash-toggle" class="mini-action-button" type="button" aria-label="新增可用資金">＋</button>
+        </div>
+        <strong id="cash-available">N/A</strong>
+        <form id="cash-form" class="cash-form hidden">
+          <input id="cash-amount" type="number" min="1" step="1" inputmode="numeric" placeholder="存入金額">
+          <button class="primary-button compact-primary" type="submit">存入</button>
+          <p id="cash-status" class="muted cash-status"></p>
+        </form>
+      </article>
+      <article class="mini-card">
+        <span class="mini-label">持股成本</span>
+        <strong id="total-cost">N/A</strong>
+      </article>
+      <article class="mini-card">
+        <span class="mini-label">持股檔數</span>
+        <strong id="holding-count">0</strong>
+      </article>
+    </section>
+
+    <section class="panel market-panel collapsed" id="market-panel">
+      <button class="section-title section-toggle" id="market-toggle" type="button" aria-expanded="false">
+        <span>
+          <h2>美股與總經</h2>
+          <span class="muted">延遲報價，小卡顯示</span>
+        </span>
+        <span class="toggle-indicator" id="market-toggle-text">展開</span>
+      </button>
+      <div id="market-list" class="market-grid compact"></div>
+    </section>
+
+      <section class="panel holding-panel" id="holding-panel">
+        <div class="section-title holding-section-title">
+          <h2>目前持股</h2>
+          <div class="sparkline-mode" aria-label="圖表時間線">
+            <button class="sparkline-mode-button" type="button" data-sparkline-days="5">5日</button>
+            <button class="sparkline-mode-button active" type="button" data-sparkline-days="10">10日</button>
+            <button class="sparkline-mode-button" type="button" data-sparkline-days="15">15日</button>
+          </div>
+          <button id="holding-panel-toggle" class="holding-panel-toggle" type="button" aria-expanded="true">收合</button>
+        </div>
+        <div id="holding-list" class="holding-groups"></div>
+      </section>
+
+    <section class="panel">
+      <div class="section-title">
+        <h2>短線觀察</h2>
+        <span class="muted">買點 / 提醒</span>
+      </div>
+      <div id="watch-list" class="card-grid"></div>
+    </section>
+
+    <section class="panel transaction-ledger-panel">
+      <div class="section-title">
+        <h2>歷史買賣紀錄</h2>
+        <span class="muted">持股、成本與損益的主要來源</span>
+      </div>
+      <div id="transaction-ledger-summary" class="ledger-summary"></div>
+      <div class="ledger-controls">
+        <input id="transaction-search" type="search" placeholder="搜尋日期、代號、名稱、備註、單號">
+        <select id="transaction-action-filter" aria-label="買賣篩選">
+          <option value="ALL">全部買賣</option>
+          <option value="BUY">只看買進</option>
+          <option value="SELL">只看賣出</option>
+        </select>
+        <select id="transaction-status-filter" aria-label="狀態篩選">
+          <option value="ALL">全部狀態</option>
+          <option value="ACTIVE">待處理</option>
+          <option value="reviewed">已確認</option>
+          <option value="warning">需檢查</option>
+          <option value="error">衝突</option>
+        </select>
+      </div>
+      <div id="transaction-book" class="transaction-book"></div>
+    </section>
+
+    <section class="manual-refresh-panel">
+      <div>
+        <h2>手動更新報價</h2>
+        <p class="muted">每 15 分鐘依市場時段更新。台股 09:00-13:00，美股 21:30-05:00；非時段只讀快取。</p>
+      </div>
+      <button id="manual-fetch-button" class="primary-button" type="button">立即更新</button>
+      <p id="manual-fetch-status" class="muted"></p>
+    </section>
+
+    <div class="floating-actions">
+      <button id="import-fab" class="trade-fab import-fab" type="button" aria-label="圖片或文字匯入">辨</button>
+      <button id="trade-fab" class="trade-fab" type="button" aria-label="新增買賣">＋</button>
+    </div>
+
+    <section id="trade-sheet" class="trade-sheet hidden" aria-label="新增買進或賣出">
+      <form id="trade-form">
+        <div class="trade-head">
+          <div>
+            <h2>新增交易</h2>
+            <p class="muted">買進會增加持股；賣出會依先進先出扣庫存。</p>
+          </div>
+          <button id="trade-close" class="icon-button compact-button" type="button" aria-label="關閉">×</button>
+        </div>
+
+        <input id="trade-action" type="hidden" value="BUY">
+        <div class="trade-action-grid">
+          <button class="trade-action-button buy active" data-action="BUY" type="button">
+            <span class="action-icon">↗</span>
+            <span>買進</span>
+          </button>
+          <button class="trade-action-button sell" data-action="SELL" type="button">
+            <span class="action-icon">↘</span>
+            <span>賣出</span>
+          </button>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            <span>日期</span>
+            <input id="trade-date" type="date" required>
+          </label>
+          <label>
+            <span>股票代碼</span>
+            <input id="trade-ticker" type="text" inputmode="latin" autocomplete="off" placeholder="例如 00900" required>
+          </label>
+          <label>
+            <span>張數</span>
+            <input id="trade-lots" type="number" min="0" step="1" placeholder="0">
+          </label>
+          <label>
+            <span>股數</span>
+            <input id="trade-shares" type="number" min="0" step="1" placeholder="例如 300">
+          </label>
+          <label>
+            <span>成交價</span>
+            <input id="trade-price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" required>
+          </label>
+          <label>
+            <span>手續費</span>
+            <input id="trade-fee" type="number" min="0" step="1" inputmode="numeric" placeholder="留空自動估">
+          </label>
+          <label>
+            <span>交易稅</span>
+            <input id="trade-tax" type="number" min="0" step="1" inputmode="numeric" placeholder="賣出留空自動估" disabled>
+          </label>
+          <label>
+            <span>備註</span>
+            <input id="trade-note" type="text" placeholder="選填">
+          </label>
+        </div>
+
+        <div id="trade-preview" class="trade-preview">請輸入交易資料</div>
+        <p id="trade-status" class="muted trade-status"></p>
+        <button id="trade-submit" class="primary-button full-button" type="submit">寫入交易</button>
+      </form>
+    </section>
+
+    <section id="import-sheet" class="trade-sheet import-sheet hidden" aria-label="圖片或文字匯入交易">
+      <div class="trade-head">
+        <div>
+          <h2>圖片 / 文字匯入交易</h2>
+          <p class="muted">圖片先預覽；把 OCR 或 AI 轉出的文字貼上後解析，確認再寫入。</p>
+        </div>
+        <button id="import-close" class="icon-button compact-button" type="button" aria-label="關閉">×</button>
+      </div>
+
+      <label class="import-file-label">
+        <span>交易明細圖片</span>
+        <input id="import-image" type="file" accept="image/*">
+      </label>
+      <img id="import-image-preview" class="import-image-preview hidden" alt="交易明細預覽">
+
+      <label class="import-text-label">
+        <span>貼上 OCR / AI 文字或 JSON</span>
+        <textarea id="import-text" rows="7" placeholder="例如：2026/06/01 現賣 00919 50股 29.60 手續費2 交易稅0"></textarea>
+      </label>
+
+      <div class="import-actions">
+        <button id="import-parse" class="primary-button" type="button">解析成確認表</button>
+        <button id="import-clear" class="icon-button" type="button">清空</button>
+      </div>
+      <p id="import-status" class="muted trade-status"></p>
+
+      <div id="import-preview" class="import-preview"></div>
+      <button id="import-submit" class="primary-button full-button hidden" type="button">確認寫入交易</button>
+    </section>
+  </main>
+  <script>
+    window.DASHBOARD_PROFILE = {{ profile | tojson }};
+  </script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=20260604-holding-collapse-1"></script>
+</body>
+</html>
+
+
+
+

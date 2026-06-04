@@ -1,0 +1,76 @@
+﻿<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>股票資料庫</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20260604-history-worker-1">
+</head>
+<body>
+  {% set token = request.args.get('token') %}
+  {% macro with_token(url) -%}
+    {{ url ~ ('?token=' ~ token|urlencode if token else '') }}
+  {%- endmacro %}
+
+  <main class="shell">
+    <header class="topbar database-topbar">
+      <a class="icon-button top-link" href="{{ with_token('/son') }}">兒子</a>
+      <h1>股票資料庫</h1>
+      <a class="icon-button top-link" href="{{ with_token('/mom') }}">媽媽</a>
+    </header>
+
+    <nav class="database-tabs" aria-label="資料庫功能">
+      <a class="database-tab active" href="{{ with_token('/database') }}">股票主檔</a>
+      <a class="database-tab" href="{{ with_token('/database/dividends') }}">股利資料</a>
+    </nav>
+
+    <section id="data-status-bar" class="data-status-bar" aria-label="資料更新狀態"></section>
+
+    <section class="hero database-hero">
+      <div>
+        <p class="muted">中央系統</p>
+        <div class="hero-value" id="instrument-count">N/A</div>
+        <div class="hero-sub">
+          <span>ETF <strong id="etf-count">N/A</strong></span>
+          <span>上市 <strong id="listed-count">N/A</strong></span>
+          <span>上櫃 <strong id="otc-count">N/A</strong></span>
+          <span>有報價 <strong id="quote-count">N/A</strong></span>
+        </div>
+      </div>
+      <div class="hero-side">
+        <span class="status-dot"></span>
+        <span id="database-updated-at">讀取中</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title database-section-title">
+        <div>
+          <h2>中央股票主檔</h2>
+          <span class="muted">先收錄目前兩個帳戶用到的股票，未來可匯入全台股票清單</span>
+        </div>
+      </div>
+      <div class="database-controls">
+        <input id="database-search" type="search" placeholder="搜尋代號、名稱、Yahoo 代號">
+        <select id="database-suffix-filter" aria-label="suffix filter">
+          <option value="">全部 suffix</option>
+          <option value=".TW">.TW</option>
+          <option value=".TWO">.TWO</option>
+        </select>
+        <select id="database-type-filter" aria-label="type filter">
+          <option value="">全部類型</option>
+          <option value="ETF">ETF</option>
+          <option value="STOCK">STOCK</option>
+        </select>
+      </div>
+      <div id="database-list" class="database-list"></div>
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='database.js') }}?v=20260604-history-worker-1"></script>
+</body>
+</html>
+
+
+
+
