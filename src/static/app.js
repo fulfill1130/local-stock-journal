@@ -10,6 +10,7 @@
   transactionSearch: "",
   transactionActionFilter: "ALL",
   transactionStatusFilter: "ALL",
+  dividendGroupOpen: {},
 };
 
 const el = (id) => document.getElementById(id);
@@ -205,6 +206,41 @@ async function submitCashDeposit(event) {
   }
 }
 
+async function submitDividendIncome(event) {
+  event.preventDefault();
+  const ticker = el("dividend-income-ticker").value.trim().toUpperCase();
+  const amount = readNumber("dividend-income-amount");
+  const status = el("dividend-income-status");
+  if (!ticker) {
+    status.textContent = "請輸入股票代碼。";
+    return;
+  }
+  if (amount === null || amount === 0) {
+    status.textContent = "請輸入實際入帳金額；修正可輸入負數。";
+    return;
+  }
+
+  status.textContent = "寫入中...";
+  try {
+    const response = await fetch(apiPath("/api/dividend-income"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticker, amount, date: el("dividend-income-date").value }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    state.lastData = data;
+    render(data);
+    el("dividend-income-amount").value = "";
+    status.textContent = "已加入。";
+    window.setTimeout(() => {
+      status.textContent = "";
+    }, 1200);
+  } catch (error) {
+    status.textContent = `寫入失敗：${error.message || error}`;
+  }
+}
+
 function render(data) {
   const settings = data.settings || {};
   const profile = data.profile || profileConfig;
@@ -215,21 +251,64 @@ function render(data) {
   setText("app-title", title);
   document.title = title;
   setText("updated-at", data.updated_at || "N/A");
+  setText("realized-pnl-total", money(summary.realized_pnl_total));
+  el("realized-pnl-total").className = `hero-value ${cls(summary.realized_pnl_total)}`;
+  setText("realized-trade-pnl-total", money(summary.realized_trade_pnl_total));
+  el("realized-trade-pnl-total").className = cls(summary.realized_trade_pnl_total);
+  setText("dividend-income-total", money(summary.dividend_income_total));
   setText("total-market-value", money(summary.total_market_value));
   setText("total-pnl", money(summary.total_pnl));
   setText("total-pnl-pct", pct(summary.total_pnl_pct));
   el("total-pnl").className = cls(summary.total_pnl);
   el("total-pnl-pct").className = cls(summary.total_pnl_pct);
-  setText("cash-available", money(summary.cash_available));
   setText("total-cost", money(summary.total_cost_value));
   setText("holding-count", holdings.length);
 
-  renderDataStatus(data.data_status || []);
   renderMarkets(data.markets || []);
   renderHoldings(holdings);
   renderWatchlist(data.watchlist || []);
   renderTransactions(data.transactions || []);
   renderTransactionBook(data.transaction_book || []);
+  renderDividendMovements(data.dividend_movements || []);
+}
+
+function renderDividendMovements(items) {
+  const root = el("dividend-income-list");
+  if (!root) return;
+  root.querySelectorAll("[data-dividend-ticker]").forEach((details) => {
+    state.dividendGroupOpen[details.dataset.dividendTicker] = details.open;
+  });
+  setText("dividend-record-count", items.length);
+  if (!items.length) {
+    root.innerHTML = `<div class="empty dividend-empty">尚未登記股利入帳</div>`;
+    return;
+  }
+  const groups = new Map();
+  items.forEach((item) => {
+    const ticker = String(item.ticker || "未指定").trim().toUpperCase() || "未指定";
+    if (!groups.has(ticker)) groups.set(ticker, []);
+    groups.get(ticker).push(item);
+  });
+  root.innerHTML = Array.from(groups.entries()).map(([ticker, rows]) => {
+    const total = rows.reduce((sum, item) => sum + (numberValue(item.amount) || 0), 0);
+    const open = state.dividendGroupOpen[ticker] ? " open" : "";
+    return `
+      <details class="dividend-stock-group" data-dividend-ticker="${escapeHtml(ticker)}"${open}>
+        <summary class="dividend-stock-summary">
+          <strong>${escapeHtml(ticker)}</strong>
+          <span>${rows.length} 筆 · ${money(total, 2)}</span>
+        </summary>
+        <div class="dividend-stock-entries">
+          ${rows.map((item) => `
+            <div class="dividend-income-row">
+              <span>${escapeHtml(String(item.time || item.date || "").slice(0, 10))}</span>
+              <strong>${money(item.amount, 2)}</strong>
+            </div>
+          `).join("")}
+        </div>
+      </details>
+    `;
+  }).join("");
 }
 
 function renderMarkets(items) {
@@ -992,6 +1071,7 @@ function closeImportSheet() {
 function clearImportSheet() {
   state.importRows = [];
   el("import-text").value = "";
+  el("import-pdf-password").value = "";
   el("import-image").value = "";
   el("import-image-preview").classList.add("hidden");
   el("import-image-preview").removeAttribute("src");
@@ -1000,17 +1080,235 @@ function clearImportSheet() {
   el("import-status").textContent = "";
 }
 
-function previewImportImage() {
+async function previewImportImage() {
   const file = el("import-image").files?.[0];
   const preview = el("import-image-preview");
+  const status = el("import-status");
   if (!file) {
     preview.classList.add("hidden");
     preview.removeAttribute("src");
+    status.textContent = "";
+    return;
+  }
+  const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+  if (isPdf) {
+    preview.classList.add("hidden");
+    preview.removeAttribute("src");
+    status.textContent = "已選擇 PDF。請確認密碼後按「抽取 PDF 文字」。";
     return;
   }
   preview.src = URL.createObjectURL(file);
   preview.classList.remove("hidden");
-  el("import-status").textContent = "目前尚未接本機 OCR；請用 Google Lens、AI 或文字擷取工具，把結果貼到文字框再解析。";
+  status.textContent = "已選擇圖片。本機尚未安裝 OCR，請用 Google Lens / AI 轉文字後貼上。";
+}
+
+async function extractSelectedImportFileText() {
+  const file = el("import-image").files?.[0];
+  const status = el("import-status");
+  const button = el("import-extract");
+  if (!file) {
+    status.textContent = "請先選擇 PDF。";
+    return;
+  }
+  const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+  if (!isPdf) {
+    status.textContent = "圖片目前只能預覽，尚未接本機 OCR。";
+    return;
+  }
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("password", el("import-pdf-password").value || "");
+  button.disabled = true;
+  status.textContent = "上傳 PDF 中，請稍候...";
+  try {
+    let data;
+    try {
+      data = await uploadImportFormData(apiPath("/api/import/extract"), formData, (progress) => {
+        status.textContent = progress
+          ? `上傳 PDF 中 ${progress}%...`
+          : "上傳 PDF 中，請稍候...";
+      });
+    } catch (uploadError) {
+      status.textContent = `一般上傳失敗，改用備援上傳：${uploadError.message || uploadError}`;
+      data = await uploadImportFileAsBase64(file, (progress) => {
+        status.textContent = progress
+          ? `備援上傳 PDF 中 ${progress}%...`
+          : "正在讀取 PDF 並改用備援上傳...";
+      });
+    }
+    if (data.ok === false) throw new Error(data.error || "PDF 抽取失敗");
+    el("import-text").value = data.text || "";
+    status.textContent = `已抽取 PDF 文字：${data.page_count || 0} 頁，${data.char_count || 0} 字。請按解析成確認表。`;
+  } catch (error) {
+    status.textContent = `抽取失敗：${error.message || error}`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveSelectedImportFileToLibrary() {
+  const file = el("import-image").files?.[0];
+  const status = el("import-status");
+  const button = el("import-save-upload");
+  if (!file) {
+    status.textContent = "請先選擇 PDF 或截圖。";
+    return;
+  }
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("source", "dashboard_import_panel");
+  formData.append("note", "從交易匯入面板存入");
+  button.disabled = true;
+  status.textContent = "存入上傳庫中...";
+  try {
+    let data;
+    try {
+      data = await uploadImportFormData(apiPath("/api/uploads"), formData, (progress) => {
+        status.textContent = progress
+          ? `存入上傳庫中 ${progress}%...`
+          : "存入上傳庫中...";
+      });
+    } catch (uploadError) {
+      status.textContent = `一般上傳失敗，改用備援保存：${uploadError.message || uploadError}`;
+      data = await uploadFileToLibraryAsBase64(file, (progress) => {
+        status.textContent = progress
+          ? `備援存入上傳庫中 ${progress}%...`
+          : "正在讀取檔案並改用備援保存...";
+      });
+    }
+    if (data.ok === false) throw new Error(data.error || "上傳失敗");
+    status.textContent = data.document?.duplicate ? "這份檔案已在上傳庫，已更新紀錄。" : "已存入上傳庫。";
+  } catch (error) {
+    status.textContent = `存入上傳庫失敗：${error.message || error}`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function uploadFileToLibraryAsBase64(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(Math.max(1, Math.round((event.loaded / event.total) * 70)));
+    };
+    reader.onerror = () => reject(new Error("讀取檔案失敗"));
+    reader.onload = async () => {
+      try {
+        const payload = {
+          filename: file.name,
+          content_type: file.type || "application/octet-stream",
+          data: String(reader.result || ""),
+          source: "dashboard_import_panel_base64",
+          note: "從交易匯入面板存入",
+        };
+        onProgress?.(80);
+        const response = await fetch(apiPath("/api/uploads-base64"), {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+        });
+        onProgress?.(95);
+        const data = await response.json();
+        if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+        resolve(data);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    onProgress?.(10);
+    reader.readAsDataURL(file);
+  });
+}
+
+function uploadImportFormData(url, formData, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url, true);
+    xhr.timeout = 60000;
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) {
+        onProgress?.(0);
+        return;
+      }
+      const progress = Math.max(1, Math.min(99, Math.round((event.loaded / event.total) * 100)));
+      onProgress?.(progress);
+    };
+    xhr.onload = () => {
+      let data = null;
+      try {
+        data = JSON.parse(xhr.responseText || "{}");
+      } catch {
+        reject(new Error(`伺服器回傳不是 JSON，HTTP ${xhr.status}`));
+        return;
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(data.error || `HTTP ${xhr.status}`));
+        return;
+      }
+      resolve(data);
+    };
+    xhr.onerror = () => reject(new Error("上傳連線失敗，請確認手機仍連著 Tailscale，並重新整理頁面再試。"));
+    xhr.ontimeout = () => reject(new Error("上傳逾時，請確認網路連線或改用較小 PDF 測試。"));
+    xhr.onabort = () => reject(new Error("上傳已中止。"));
+    xhr.send(formData);
+  });
+}
+
+function uploadImportFileAsBase64(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("手機讀取 PDF 失敗，請重新選檔。"));
+    reader.onload = async () => {
+      try {
+        onProgress?.(35);
+        const result = String(reader.result || "");
+        const base64Data = result.includes(",") ? result.split(",", 2)[1] : result;
+        const payload = {
+          filename: file.name,
+          content_type: file.type || "application/pdf",
+          password: el("import-pdf-password").value || "",
+          data: base64Data,
+        };
+        onProgress?.(55);
+        const response = await fetch(apiPath("/api/import/extract-base64"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        onProgress?.(95);
+        const data = await response.json();
+        if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+        resolve(data);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    onProgress?.(10);
+    reader.readAsDataURL(file);
+  });
+}
+
+async function extractLatestLocalPdfText() {
+  const status = el("import-status");
+  const button = el("import-extract-local");
+  button.disabled = true;
+  status.textContent = "讀取電腦資料夾最新 PDF 中，請稍候...";
+  try {
+    const formData = new FormData();
+    formData.append("password", el("import-pdf-password").value || "");
+    const response = await fetch(apiPath("/api/import/extract-latest-local"), {
+      method: "POST",
+      body: formData,
+    });
+    const data = await response.json();
+    if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+    el("import-text").value = data.text || "";
+    status.textContent = `已抽取 ${data.filename || "PDF"}：${data.page_count || 0} 頁，${data.char_count || 0} 字。請按解析成確認表。`;
+  } catch (error) {
+    status.textContent = `讀取資料夾 PDF 失敗：${error.message || error}`;
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function parseImportText() {
@@ -1034,6 +1332,9 @@ function parseTradeImportRows(text) {
 
   const defaultDate = parseImportedDate(text) || todayInputValue();
   const knownItems = knownTradeItems();
+  const statementRows = parseStatementTradeRows(text, defaultDate, knownItems);
+  if (statementRows.length) return statementRows;
+
   const lines = text
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -1061,7 +1362,7 @@ function normalizeImportRow(item) {
   const ticker = String(item.ticker || item.stock || item.code || "").trim().toUpperCase();
   const shares = numberValue(item.shares ?? item.qty ?? item.quantity);
   const lots = numberValue(item.lots);
-  const price = numberValue(item.price ?? item成交價);
+  const price = numberValue(item.price ?? item["成交價"]);
   if (!action || !ticker || price === null || ((shares || 0) <= 0 && (lots || 0) <= 0)) return null;
   return {
     action,
@@ -1077,7 +1378,41 @@ function normalizeImportRow(item) {
   };
 }
 
+function parseStatementTradeRows(text, defaultDate, knownItems) {
+  const normalized = String(text || "")
+    .replace(/\r/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n+/g, " ")
+    .trim();
+  if (!normalized || !/(現買|現賣|買沖|賣沖)/.test(normalized)) return [];
+
+  const rows = [];
+  const tradePattern = /(?:^|\s)(現買|現賣|買沖|賣沖)\s+(.+?)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)(.*?)(?=\s+(?:現買|現賣|買沖|賣沖|小計|提醒您|注意事項)|$)/g;
+  for (const match of normalized.matchAll(tradePattern)) {
+    const action = normalizeAction(match[1]);
+    const rawName = cleanStatementStockName(match[2]);
+    const known = matchKnownItem(rawName, knownItems);
+    if (!action) continue;
+    rows.push({
+      action,
+      date: defaultDate,
+      ticker: known?.ticker || "",
+      name: known.name || rawName,
+      lots: 0,
+      shares: cleanNumber(match[3]),
+      price: cleanNumber(match[5]),
+      fee: cleanNumber(match[7]),
+      tax: action === "SELL" ? cleanNumber(match[8]) : 0,
+      note: known?.ticker ? "PDF 對帳單匯入" : `PDF 對帳單匯入，需補代號：${rawName}`,
+    });
+  }
+  return rows;
+}
+
 function parseTradeLine(line, defaultDate, knownItems) {
+  const statementRow = parseStatementTradeLine(line, defaultDate, knownItems);
+  if (statementRow) return statementRow;
+
   const action = normalizeAction(line);
   if (!action) return null;
   const known = matchKnownItem(line, knownItems);
@@ -1111,9 +1446,41 @@ function parseTradeLine(line, defaultDate, knownItems) {
   };
 }
 
+function parseStatementTradeLine(line, defaultDate, knownItems) {
+  const text = String(line || "").replace(/\s*\|\s*/g, " ").replace(/\s+/g, " ").trim();
+  const actionMatch = text.match(/\b(20\d{6})\s+(現買|現賣|買沖|賣沖)\s+([\d,]+)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)/);
+  if (!actionMatch) return null;
+  const beforeAction = text.slice(0, actionMatch.index).trim();
+  const tickerMatches = [...beforeAction.matchAll(/\b\d{4}[A-Z]?\b/gi)];
+  const ticker = tickerMatches.length ? tickerMatches[tickerMatches.length - 1][0].toUpperCase() : "";
+  if (!ticker) return null;
+  const known = matchKnownItem(text, knownItems);
+  const action = normalizeAction(actionMatch[2]);
+  if (!action) return null;
+  return {
+    action,
+    date: normalizeDateText(actionMatch[1]) || defaultDate,
+    ticker,
+    name: known?.name || "",
+    lots: 0,
+    shares: cleanNumber(actionMatch[3]),
+    price: cleanNumber(actionMatch[4]),
+    fee: cleanNumber(actionMatch[6]),
+    tax: action === "SELL" ? cleanNumber(actionMatch[7]) : 0,
+    note: "PDF 對帳單匯入",
+  };
+}
+
+function cleanStatementStockName(value) {
+  return String(value || "")
+    .replace(/\s+/g, "")
+    .replace(/[：:，,。]+$/g, "")
+    .trim();
+}
+
 function knownTradeItems() {
   const data = state.lastData || {};
-  const items = [...(data.holdings || []), ...(data.watchlist || [])];
+  const items = [...(data.holdings || []), ...(data.watchlist || []), ...(data.known_trade_items || [])];
   return items
     .map((item) => ({
       ticker: String(item.ticker || "").toUpperCase(),
@@ -1124,9 +1491,18 @@ function knownTradeItems() {
 }
 
 function matchKnownItem(line, items) {
-  return items.find((item) => item.name && line.includes(item.name))
-    || items.find((item) => item.ticker && line.includes(item.ticker))
+  const normalizedLine = compactTradeText(line);
+  return items.find((item) => item.name && normalizedLine.includes(compactTradeText(item.name)))
+    || items.find((item) => {
+      const name = compactTradeText(item.name);
+      return name.length >= 4 && normalizedLine.length >= 4 && name.includes(normalizedLine);
+    })
+    || items.find((item) => item.ticker && normalizedLine.includes(compactTradeText(item.ticker)))
     || null;
+}
+
+function compactTradeText(value) {
+  return String(value || "").replace(/\s+/g, "").toUpperCase();
 }
 
 function normalizeAction(value) {
@@ -1145,7 +1521,10 @@ function parseImportedDate(text) {
 }
 
 function normalizeDateText(value) {
-  const match = String(value || "").match(/(20\d{2})[/-](\d{1,2})[/-](\d{1,2})/);
+  const text = String(value || "");
+  const compact = text.match(/\b(20\d{2})(\d{2})(\d{2})\b/);
+  if (compact) return `${compact[1]}-${compact[2]}-${compact[3]}`;
+  const match = text.match(/(20\d{2})[/-](\d{1,2})[/-](\d{1,2})/);
   if (!match) return "";
   return `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
 }
@@ -1364,6 +1743,9 @@ function setupTradeForm() {
   el("import-close").addEventListener("click", closeImportSheet);
   el("import-clear").addEventListener("click", clearImportSheet);
   el("import-image").addEventListener("change", previewImportImage);
+  el("import-save-upload").addEventListener("click", saveSelectedImportFileToLibrary);
+  el("import-extract").addEventListener("click", extractSelectedImportFileText);
+  el("import-extract-local").addEventListener("click", extractLatestLocalPdfText);
   el("import-parse").addEventListener("click", parseImportText);
   el("import-submit").addEventListener("click", submitImportRows);
   el("import-preview").addEventListener("click", (event) => {
@@ -1384,8 +1766,11 @@ function setupTradeForm() {
 el("refresh-button").addEventListener("click", () => loadState(true));
 el("manual-fetch-button").addEventListener("click", manualFetch);
 el("market-toggle").addEventListener("click", toggleMarketPanel);
-el("cash-toggle").addEventListener("click", toggleCashForm);
-el("cash-form").addEventListener("submit", submitCashDeposit);
+if (document.getElementById("cash-toggle") && document.getElementById("cash-form")) {
+  el("cash-toggle").addEventListener("click", toggleCashForm);
+  el("cash-form").addEventListener("submit", submitCashDeposit);
+}
+el("dividend-income-form").addEventListener("submit", submitDividendIncome);
 el("holding-panel-toggle").addEventListener("click", () => {
   state.holdingPanelOpen = !state.holdingPanelOpen;
   syncHoldingPanelState();
@@ -1409,6 +1794,11 @@ document.addEventListener("click", (event) => {
   state.holdingDetailOpen[ticker] = !state.holdingDetailOpen[ticker];
   if (state.lastData) render(state.lastData);
 });
+document.addEventListener("toggle", (event) => {
+  const details = event.target.closest?.("[data-dividend-ticker]");
+  if (!details) return;
+  state.dividendGroupOpen[details.dataset.dividendTicker] = details.open;
+}, true);
 document.addEventListener("click", (event) => {
   const button = event.target.closest("[data-sparkline-days]");
   if (!button) return;
@@ -1515,6 +1905,7 @@ window.addEventListener("resize", hideSparkTooltip, { passive: true });
 document.addEventListener("touchmove", hideSparkTooltip, { passive: true });
 document.addEventListener("pointercancel", hideSparkTooltip);
 setupTradeForm();
+el("dividend-income-date").value = todayInputValue();
 loadState(false);
 state.timer = window.setInterval(() => loadState(false), 10000);
 

@@ -17,6 +17,7 @@ import certifi
 
 TWSE_STOCK_DAY_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY"
 TPEX_TRADING_STOCK_URL = "https://www.tpex.org.tw/www/zh-tw/afterTrading/tradingStock"
+TWSE_LISTED_COMPANY_PROFILE_URL = "https://openapi.twse.com.tw/v1/opendata/t187ap03_L"
 
 
 def fetch_twse_daily_range(
@@ -118,6 +119,26 @@ def fetch_tpex_name(ticker: str, month_start: date) -> str:
     )
     payload = read_json_url(f"{TPEX_TRADING_STOCK_URL}?{query}")
     return str(payload.get("name", "") or "").strip()
+
+
+def fetch_twse_listed_company_profiles() -> dict[str, dict[str, Any]]:
+    payload = read_json_url_any(TWSE_LISTED_COMPANY_PROFILE_URL)
+    if not isinstance(payload, list):
+        return {}
+    rows: dict[str, dict[str, Any]] = {}
+    for raw in payload:
+        if not isinstance(raw, dict):
+            continue
+        ticker = str(raw.get("公司代號") or "").strip().upper()
+        if not ticker:
+            continue
+        rows[ticker] = {
+            "ticker": ticker,
+            "name": str(raw.get("公司簡稱") or raw.get("公司名稱") or "").strip(),
+            "listing_date": compact_yyyymmdd_to_iso(raw.get("上市日期")),
+            "source": "TWSE_T187AP03_L",
+        }
+    return rows
 
 
 def fetch_tpex_month(ticker: str, month_start: date) -> list[dict[str, Any]]:
@@ -270,17 +291,75 @@ def read_json_url(url: str) -> dict[str, Any]:
         },
     )
     ssl_context = ssl.create_default_context(cafile=certifi.where())
-    try:
-        with urlopen(request, timeout=30, context=ssl_context) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        if exc.code not in {301, 302, 303, 307, 308}:
-            raise
-        return read_json_url_with_curl(url)
-    except URLError as exc:
-        if "CERTIFICATE_VERIFY_FAILED" not in str(exc):
-            raise
-        return read_json_url_with_curl(url)
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            with urlopen(request, timeout=30, context=ssl_context) as response:
+                return parse_json_response_text(response.read().decode("utf-8"), url)
+        except HTTPError as exc:
+            if exc.code not in {301, 302, 303, 307, 308}:
+                last_error = exc
+                if attempt < 2:
+                    time.sleep(0.8 * (attempt + 1))
+                    continue
+                raise
+            return read_json_url_with_curl(url)
+        except URLError as exc:
+            if "CERTIFICATE_VERIFY_FAILED" not in str(exc):
+                last_error = exc
+                if attempt < 2:
+                    time.sleep(0.8 * (attempt + 1))
+                    continue
+                raise
+            return read_json_url_with_curl(url)
+        except json.JSONDecodeError as exc:
+            last_error = exc
+            if attempt < 2:
+                time.sleep(0.8 * (attempt + 1))
+                continue
+    if last_error is not None:
+        raise ValueError(f"official JSON parse failed after retries: {last_error}") from last_error
+    raise ValueError("official JSON parse failed after retries")
+
+
+def read_json_url_any(url: str) -> Any:
+    request = Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 stock-daily-helper/1.0",
+            "Accept": "application/json",
+        },
+    )
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            with urlopen(request, timeout=30, context=ssl_context) as response:
+                return parse_json_response_text(response.read().decode("utf-8"), url)
+        except HTTPError as exc:
+            if exc.code not in {301, 302, 303, 307, 308}:
+                last_error = exc
+                if attempt < 2:
+                    time.sleep(0.8 * (attempt + 1))
+                    continue
+                raise
+            return read_json_url_with_curl(url)
+        except URLError as exc:
+            if "CERTIFICATE_VERIFY_FAILED" not in str(exc):
+                last_error = exc
+                if attempt < 2:
+                    time.sleep(0.8 * (attempt + 1))
+                    continue
+                raise
+            return read_json_url_with_curl(url)
+        except json.JSONDecodeError as exc:
+            last_error = exc
+            if attempt < 2:
+                time.sleep(0.8 * (attempt + 1))
+                continue
+    if last_error is not None:
+        raise ValueError(f"official JSON parse failed after retries: {last_error}") from last_error
+    raise ValueError("official JSON parse failed after retries")
 
 
 def read_json_url_with_curl(url: str) -> dict[str, Any]:
@@ -299,8 +378,24 @@ def read_json_url_with_curl(url: str) -> dict[str, Any]:
             text=True,
             encoding="utf-8",
         )
-        return json.loads(completed.stdout)
+        return parse_json_response_text(completed.stdout, url)
+
+
+def parse_json_response_text(text: str, url: str) -> Any:
+    stripped = str(text or "").lstrip("\ufeff").strip()
+    if not stripped:
+        raise json.JSONDecodeError("empty response", "", 0)
+    if stripped.startswith("<"):
+        raise json.JSONDecodeError("html response", stripped[:80], 0)
+    return json.loads(stripped)
 
 
 def parse_iso_date(value: str) -> date:
     return datetime.strptime(value, "%Y-%m-%d").date()
+
+
+def compact_yyyymmdd_to_iso(value: object) -> str:
+    text = str(value or "").strip()
+    if len(text) != 8 or not text.isdigit():
+        return ""
+    return f"{text[:4]}-{text[4:6]}-{text[6:8]}"

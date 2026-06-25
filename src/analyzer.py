@@ -27,6 +27,16 @@ def build_dashboard_state(
     total_cost_value = sum(item.get("cost_value") or 0 for item in analyzed_holdings)
     total_pnl = sum(item.get("unrealized_pnl") or 0 for item in analyzed_holdings)
     total_pnl_pct = pct(total_pnl, total_cost_value)
+    realized_trade_pnl_total = _realized_pnl_total(raw_state.get("transactions", []))
+    dividend_movements = raw_state.get("dividend_movements", [])
+    dividend_income_total = sum(
+        as_float(item.get("amount"), 0) or 0
+        for item in dividend_movements
+        if isinstance(item, dict)
+    )
+    if not dividend_movements:
+        dividend_income_total = as_float(settings.get("dividend_income_total"), 0) or 0
+    realized_pnl_total = realized_trade_pnl_total + dividend_income_total
 
     return {
         "settings": raw_state.get("settings", {}),
@@ -35,6 +45,9 @@ def build_dashboard_state(
             "total_cost_value": total_cost_value,
             "total_pnl": total_pnl,
             "total_pnl_pct": total_pnl_pct,
+            "realized_pnl_total": realized_pnl_total,
+            "realized_trade_pnl_total": realized_trade_pnl_total,
+            "dividend_income_total": dividend_income_total,
             "cash_available": raw_state.get("settings", {}).get("cash_available", 0),
             "important_count": len(important),
         },
@@ -43,7 +56,19 @@ def build_dashboard_state(
         "watchlist": sorted(analyzed_watchlist, key=lambda row: row["priority"], reverse=True),
         "important": important,
         "transactions": list(reversed(raw_state.get("transactions", [])[-8:])),
+        "dividend_movements": list(reversed(dividend_movements)),
     }
+
+
+def _realized_pnl_total(transactions: list[dict[str, Any]]) -> float:
+    total = 0.0
+    for item in transactions:
+        if str(item.get("action", "")).strip().upper() != "SELL":
+            continue
+        realized = as_float(item.get("realized_pnl"))
+        if realized is not None:
+            total += realized
+    return total
 
 
 def _analyze_markets(markets: list[dict[str, Any]]) -> list[dict[str, Any]]:

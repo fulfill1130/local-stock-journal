@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ profile.label }} - 股票詳細</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20260614-account-pages-1">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="icon-button top-link" href="{{ url_for('database_index', token=request.args.get('token')) if request.args.get('token') else url_for('database_index') }}">資料庫</a>
+      <h1>{{ profile.label }}</h1>
+      <button id="stock-detail-refresh" class="icon-button" type="button">更新</button>
+    </header>
+
+    <nav class="account-page-tabs" aria-label="帳戶頁面">
+      <a class="account-page-tab" href="{{ url_for('profile_index', profile_slug=profile.slug, token=request.args.get('token')) if request.args.get('token') else url_for('profile_index', profile_slug=profile.slug) }}">
+        <strong>分頁1</strong>
+        <span>帳戶總覽</span>
+      </a>
+      <a class="account-page-tab active" href="{{ url_for('profile_stock_details', profile_slug=profile.slug, token=request.args.get('token')) if request.args.get('token') else url_for('profile_stock_details', profile_slug=profile.slug) }}">
+        <strong>分頁2</strong>
+        <span>股票詳細</span>
+      </a>
+    </nav>
+
+    <section class="hero stock-detail-hero">
+      <div>
+        <p class="muted">股票詳細資料</p>
+        <div class="hero-value" id="stock-detail-count">N/A</div>
+        <div class="hero-sub"><span>目前持股檔數</span></div>
+      </div>
+      <div class="hero-side">
+        <span class="status-dot"></span>
+        <span id="stock-detail-updated-at">讀取中</span>
+      </div>
+    </section>
+
+    <section class="panel stock-detail-picker-panel">
+      <label class="stock-detail-picker">
+        <span>選擇股票</span>
+        <select id="stock-detail-select" aria-label="選擇持股"></select>
+      </label>
+    </section>
+
+    <section id="stock-detail-view" class="stock-detail-view" aria-live="polite">
+      <div class="empty">正在讀取持股資料</div>
+    </section>
+  </main>
+
+  <script>
+    window.DASHBOARD_PROFILE = {{ profile | tojson }};
+  </script>
+  <script src="{{ url_for('static', filename='stock_detail.js') }}?v=20260614-account-pages-1"></script>
+</body>
+</html>

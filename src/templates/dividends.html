@@ -22,6 +22,8 @@
     <nav class="database-tabs" aria-label="資料庫頁籤">
       <a class="database-tab" href="{{ with_token('/database') }}">股票資料</a>
       <a class="database-tab active" href="{{ with_token('/database/dividends') }}">股利資料</a>
+      <a class="database-tab" href="{{ with_token('/database/logs') }}">作業紀錄</a>
+      <a class="database-tab" href="{{ with_token('/database/uploads') }}">上傳庫</a>
     </nav>
 
     <section id="data-status-bar" class="data-status-bar" aria-label="資料更新狀態"></section>

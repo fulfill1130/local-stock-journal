@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>上傳庫</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20260606-uploads-1">
+</head>
+<body>
+  {% set token = request.args.get('token') %}
+  {% macro with_token(url) -%}
+    {{ url ~ ('?token=' ~ token|urlencode if token else '') }}
+  {%- endmacro %}
+
+  <main class="shell">
+    <header class="topbar database-topbar">
+      <a class="icon-button top-link" href="{{ with_token('/son') }}">兒子</a>
+      <h1>上傳庫</h1>
+      <a class="icon-button top-link" href="{{ with_token('/mom') }}">媽媽</a>
+    </header>
+
+    <nav class="database-tabs" aria-label="資料庫功能">
+      <a class="database-tab" href="{{ with_token('/database') }}">股票主檔</a>
+      <a class="database-tab" href="{{ with_token('/database/dividends') }}">股利資料</a>
+      <a class="database-tab" href="{{ with_token('/database/logs') }}">作業紀錄</a>
+      <a class="database-tab active" href="{{ with_token('/database/uploads') }}">上傳庫</a>
+    </nav>
+
+    <section id="data-status-bar" class="data-status-bar" aria-label="資料更新狀態"></section>
+
+    <section class="hero database-hero">
+      <div>
+        <p class="muted">PDF / 截圖暫存</p>
+        <div class="hero-value" id="upload-count">N/A</div>
+        <div class="hero-sub">
+          <span>最近檔案 <strong id="latest-upload-name">N/A</strong></span>
+          <span>最近狀態 <strong id="latest-upload-status">N/A</strong></span>
+        </div>
+      </div>
+      <div class="hero-side">
+        <span class="status-dot"></span>
+        <span id="uploads-updated-at">讀取中</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title database-section-title">
+        <div>
+          <h2>新增上傳</h2>
+          <span class="muted">只保存檔案，不會自動入帳；之後可接 AI / OCR 解析。</span>
+        </div>
+      </div>
+      <form id="upload-form" class="upload-form">
+        <label>
+          <span>帳戶</span>
+          <select id="upload-profile" name="profile">
+            <option value="son">兒子</option>
+            <option value="mom">媽媽</option>
+          </select>
+        </label>
+        <label>
+          <span>PDF / 截圖</span>
+          <input id="upload-file" name="file" type="file" accept="application/pdf,image/*" required>
+        </label>
+        <label>
+          <span>備註</span>
+          <input id="upload-note" name="note" type="text" placeholder="例如：台新 2026/06/05 成交單">
+        </label>
+        <button class="primary-button" type="submit">存入上傳庫</button>
+      </form>
+      <p id="upload-status" class="muted trade-status"></p>
+    </section>
+
+    <section class="panel">
+      <div class="section-title database-section-title">
+        <div>
+          <h2>上傳清單</h2>
+          <span class="muted">可預覽 PDF / 圖片；狀態先供人工整理。</span>
+        </div>
+      </div>
+      <div class="database-controls">
+        <select id="upload-profile-filter" aria-label="profile filter">
+          <option value="">全部帳戶</option>
+          <option value="son">兒子</option>
+          <option value="mom">媽媽</option>
+        </select>
+        <select id="upload-status-filter" aria-label="status filter">
+          <option value="">全部狀態</option>
+          <option value="stored">stored</option>
+          <option value="parsed">parsed</option>
+          <option value="reviewed">reviewed</option>
+          <option value="ignored">ignored</option>
+        </select>
+      </div>
+      <div id="upload-list" class="upload-list"></div>
+      <div id="upload-pagination" class="database-pagination"></div>
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='uploads.js') }}?v=20260606-uploads-1"></script>
+</body>
+</html>

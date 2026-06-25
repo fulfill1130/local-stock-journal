@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ profile.label }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20260604-holding-collapse-1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20260614-account-pages-1">
 </head>
 <body>
   <main class="shell">
@@ -14,15 +14,30 @@
       <button id="refresh-button" class="icon-button" type="button" aria-label="重新整理">更新</button>
     </header>
 
-    <section id="data-status-bar" class="data-status-bar" aria-label="資料更新狀態"></section>
+    <nav class="account-page-tabs" aria-label="帳戶頁面">
+      <a class="account-page-tab active" href="{{ url_for('profile_index', profile_slug=profile.slug, token=request.args.get('token')) if request.args.get('token') else url_for('profile_index', profile_slug=profile.slug) }}">
+        <strong>分頁1</strong>
+        <span>帳戶總覽</span>
+      </a>
+      <a class="account-page-tab" href="{{ url_for('profile_stock_details', profile_slug=profile.slug, token=request.args.get('token')) if request.args.get('token') else url_for('profile_stock_details', profile_slug=profile.slug) }}">
+        <strong>分頁2</strong>
+        <span>股票詳細</span>
+      </a>
+    </nav>
 
     <section class="hero">
-      <div>
-        <p class="muted">持股總市值</p>
-        <div class="hero-value" id="total-market-value">N/A</div>
+      <div class="hero-earnings">
+        <p class="muted">您已經賺了</p>
+        <div class="hero-value" id="realized-pnl-total">N/A</div>
         <div class="hero-sub">
-          <span>總損益 <strong id="total-pnl">N/A</strong></span>
-          <span id="total-pnl-pct">N/A</span>
+          <div class="hero-realized-breakdown">
+            <span>交易獲利 <strong id="realized-trade-pnl-total">N/A</strong></span>
+            <span>已領股利 <strong id="dividend-income-total" class="positive">N/A</strong></span>
+          </div>
+          <div class="hero-book-pnl">
+            <span>帳面損益 <strong id="total-pnl">N/A</strong></span>
+            <span id="total-pnl-pct">N/A</span>
+          </div>
         </div>
       </div>
       <div class="hero-side">
@@ -31,18 +46,39 @@
       </div>
     </section>
 
-    <section class="mini-grid">
-      <article class="mini-card cash-card">
-        <div class="mini-card-head">
-          <span class="mini-label">可用資金</span>
-          <button id="cash-toggle" class="mini-action-button" type="button" aria-label="新增可用資金">＋</button>
-        </div>
-        <strong id="cash-available">N/A</strong>
-        <form id="cash-form" class="cash-form hidden">
-          <input id="cash-amount" type="number" min="1" step="1" inputmode="numeric" placeholder="存入金額">
-          <button class="primary-button compact-primary" type="submit">存入</button>
-          <p id="cash-status" class="muted cash-status"></p>
+    <details class="panel dividend-ledger-panel">
+      <summary class="dividend-ledger-toggle">
+        <span>
+          <strong>股利入帳紀錄</strong>
+          <small>依券商實際入帳金額登記</small>
+        </span>
+        <span class="dividend-ledger-summary"><b id="dividend-record-count">0</b> 筆</span>
+      </summary>
+      <div class="dividend-ledger-content">
+        <form id="dividend-income-form" class="dividend-entry-form">
+          <label>
+            <span>股票代碼</span>
+            <input id="dividend-income-ticker" type="text" inputmode="latin" autocomplete="off" placeholder="例如 00900" required>
+          </label>
+          <label>
+            <span>入帳日期</span>
+            <input id="dividend-income-date" type="date" required>
+          </label>
+          <label>
+            <span>實收股利</span>
+            <input id="dividend-income-amount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" required>
+          </label>
+          <button class="primary-button" type="submit">新增入帳</button>
         </form>
+        <p id="dividend-income-status" class="muted dividend-entry-status"></p>
+        <div id="dividend-income-list" class="dividend-income-list"></div>
+      </div>
+    </details>
+
+    <section class="mini-grid">
+      <article class="mini-card">
+        <span class="mini-label">持股總市值</span>
+        <strong id="total-market-value">N/A</strong>
       </article>
       <article class="mini-card">
         <span class="mini-label">持股成本</span>
@@ -191,16 +227,27 @@
       <div class="trade-head">
         <div>
           <h2>圖片 / 文字匯入交易</h2>
-          <p class="muted">圖片先預覽；把 OCR 或 AI 轉出的文字貼上後解析，確認再寫入。</p>
+          <p class="muted">PDF 會先嘗試自動抽文字；圖片先預覽，沒有本機 OCR 時仍需貼上文字。</p>
         </div>
         <button id="import-close" class="icon-button compact-button" type="button" aria-label="關閉">×</button>
       </div>
 
       <label class="import-file-label">
-        <span>交易明細圖片</span>
-        <input id="import-image" type="file" accept="image/*">
+        <span>交易明細圖片 / PDF</span>
+        <input id="import-image" type="file" accept="image/*,.pdf,application/pdf">
       </label>
       <img id="import-image-preview" class="import-image-preview hidden" alt="交易明細預覽">
+
+      <label class="import-text-label compact-import-password">
+        <span>PDF 密碼</span>
+        <input id="import-pdf-password" type="password" inputmode="numeric" placeholder="沒有密碼可留空">
+      </label>
+
+      <div class="import-extract-actions">
+        <button id="import-save-upload" class="icon-button full-button" type="button">存入上傳庫</button>
+        <button id="import-extract" class="icon-button full-button" type="button">抽取 PDF 文字</button>
+        <button id="import-extract-local" class="icon-button full-button" type="button" hidden>讀資料夾最新 PDF</button>
+      </div>
 
       <label class="import-text-label">
         <span>貼上 OCR / AI 文字或 JSON</span>
@@ -220,7 +267,7 @@
   <script>
     window.DASHBOARD_PROFILE = {{ profile | tojson }};
   </script>
-  <script src="{{ url_for('static', filename='app.js') }}?v=20260604-holding-collapse-1"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=20260614-account-pages-1"></script>
 </body>
 </html>
 

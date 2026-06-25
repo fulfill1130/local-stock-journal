@@ -5,7 +5,13 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-from central_store import get_instruments_by_ticker, ohlcv_daily_stats, upsert_ohlcv_daily
+from central_store import (
+    get_instruments_by_ticker,
+    ohlcv_daily_stats,
+    record_market_data_problem,
+    rebuild_health_summary,
+    upsert_ohlcv_daily,
+)
 from official_market import fetch_tpex_daily_range, fetch_twse_daily_range, parse_iso_date
 
 
@@ -14,7 +20,8 @@ def sync_missing_official_daily_bars(
     end_date: date | None = None,
     ticker_pause_seconds: float = 0.5,
 ) -> dict[str, Any]:
-    end_date = end_date or date.today()
+    requested_end_date = end_date or date.today()
+    end_date = latest_weekday_on_or_before(requested_end_date)
     instruments = get_instruments_by_ticker(central_db_path)
     updated: list[dict[str, Any]] = []
     no_new_rows: list[dict[str, Any]] = []
@@ -34,6 +41,20 @@ def sync_missing_official_daily_bars(
 
         if start_date > end_date:
             already_current.append(ticker)
+            continue
+
+        if last_date_text and start_date < end_date - timedelta(days=10):
+            no_new_rows.append(
+                {
+                    "ticker": ticker,
+                    "source": "BACKFILL",
+                    "start_date": start_date.isoformat(),
+                    "end_date": end_date.isoformat(),
+                    "rows": 0,
+                    "trade_dates": [],
+                    "skip_reason": "history gap is too large for daily sync; waiting for background backfill",
+                }
+            )
             continue
 
         source = "tpex" if instrument.get("exchange_suffix") == ".TWO" else "twse"
@@ -59,13 +80,25 @@ def sync_missing_official_daily_bars(
             else:
                 no_new_rows.append(payload)
         except Exception as exc:
-            failed.append({"ticker": ticker, "error": str(exc)})
+            error = str(exc)
+            failed.append({"ticker": ticker, "error": error})
+            record_market_data_problem(
+                central_db_path,
+                ticker,
+                "broken",
+                "parse_error",
+                "high",
+                error[:500],
+                next_retry_at=(date.today() + timedelta(days=1)).isoformat(),
+            )
 
         if ticker_pause_seconds > 0 and index < len(ordered):
             time.sleep(ticker_pause_seconds)
 
+    rebuild_health_summary(central_db_path)
     return {
         "end_date": end_date.isoformat(),
+        "requested_end_date": requested_end_date.isoformat(),
         "instrument_count": len(instruments),
         "rows_written": rows_written,
         "updated": updated,
@@ -73,3 +106,10 @@ def sync_missing_official_daily_bars(
         "already_current": already_current,
         "failed": failed,
     }
+
+
+def latest_weekday_on_or_before(value: date) -> date:
+    current = value
+    while current.weekday() >= 5:
+        current -= timedelta(days=1)
+    return current

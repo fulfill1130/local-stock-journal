@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+import json
+import base64
+import hashlib
+import mimetypes
+import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, Response, abort, jsonify, redirect, render_template, request, url_for
+from flask import Flask, Response, abort, jsonify, redirect, render_template, request, send_file, url_for
+from pypdf import PdfReader
+from werkzeug.utils import secure_filename
 
 from analyzer import build_dashboard_state
 from central_store import (
+    add_split_action,
     apply_daily_quote_fallbacks,
     begin_update_status,
     enrich_items_with_instruments,
@@ -17,19 +25,29 @@ from central_store import (
     is_specific_name,
     latest_after_close_quote,
     list_dividend_targets,
+    list_corporate_actions,
     list_etf_dividends,
     list_ohlcv_daily,
     list_instruments,
+    list_operation_logs,
+    list_uploaded_documents,
     list_update_status,
     load_quote_cache,
     migrate_legacy_central_db,
     ohlcv_daily_stats,
     record_dividend_refresh_status,
+    record_market_data_problem,
+    record_operation_log,
+    record_uploaded_document,
+    rebuild_health_summary,
     register_instrument,
     seed_instruments_from_state,
     set_dividend_target,
+    get_uploaded_document,
+    update_uploaded_document_status,
     set_instrument,
     update_instrument_history_status,
+    update_instrument_listing_date,
     upsert_ohlcv_daily,
     upsert_after_close_quotes,
     upsert_etf_dividends,
@@ -37,6 +55,7 @@ from central_store import (
     upsert_quote_snapshots_15m,
 )
 from dividend_fetcher import fetch_twse_etf_dividends, fetch_yahoo_stock_dividends
+from gmail_reader import sync_latest_pdf_attachments
 from market import (
     QuoteService,
     US_MARKETS,
@@ -48,7 +67,7 @@ from market import (
     symbols_for_state,
 )
 from official_sync import sync_missing_official_daily_bars
-from official_market import fetch_tpex_month, fetch_twse_month, month_starts, parse_iso_date
+from official_market import fetch_tpex_month, fetch_twse_listed_company_profiles, fetch_twse_month, month_starts, parse_iso_date
 from scheduler import append_refresh_log, start_daily_time_scheduler, start_interval_refresh_scheduler
 from store import ensure_transaction_ids, load_state, public_state_copy, rebuild_holdings_from_transactions, record_buy, record_sell, save_state, update_state
 from utils import as_float, fmt_money, fmt_pct, now_string, yahoo_symbol
@@ -73,6 +92,7 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
     ensure_central_db(central_db_path)
     migrate_legacy_central_db(project_root / "data" / "central.sqlite", central_db_path)
     seed_central_from_profiles(project_root, central_db_path)
+    rebuild_health_summary(central_db_path)
     refresh_log_path = project_root / "data" / "refresh_log.json"
 
     @app.before_request
@@ -95,7 +115,12 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
         profile = profile_info(profile_slug)
         state_path = profile_state_path(project_root, profile_slug)
         loaded_state = load_state(state_path)
-        if ensure_transaction_ids(loaded_state):
+        changed = ensure_transaction_ids(loaded_state)
+        split_actions = list_corporate_actions(central_db_path)
+        if split_actions and loaded_state.get("transactions"):
+            rebuild_holdings_from_transactions(loaded_state, split_actions)
+            changed = True
+        if changed:
             save_state(state_path, loaded_state)
         raw_state = public_state_copy(loaded_state)
         seed_instruments_from_state(central_db_path, raw_state)
@@ -140,6 +165,7 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
         dashboard["refresh_policy"] = service.refresh_summary
         dashboard["refresh_policy"]["intraday_15m_rows_written"] = intraday_written
         dashboard["profile"] = profile
+        dashboard["known_trade_items"] = trade_import_known_items(raw_state, central_db_path)
         if force:
             requested = set(service.refresh_summary.get("requested_symbols", []))
             tw_requested = {symbol for symbol in requested if symbol.endswith(".TW") or symbol.endswith(".TWO")}
@@ -267,7 +293,6 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
                 status="failed",
                 message=message,
             )
-            raise
 
     def after_close_refresh() -> None:
         started_at = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -397,6 +422,64 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
                 status="failed",
                 message=str(exc)[:240],
             )
+
+    def gmail_statement_refresh() -> None:
+        started_at = datetime.now().astimezone().isoformat(timespec="seconds")
+        next_run = next_daily_run_at("23:30").isoformat(timespec="seconds")
+        begin_update_status(
+            central_db_path,
+            "gmail_statements",
+            "gmail",
+            started_at,
+            next_run_at=next_run,
+            message="Gmail statement scan started",
+        )
+        try:
+            summary = sync_latest_pdf_attachments(
+                project_root,
+                central_db_path,
+                profile_slug="son",
+                credentials_path=project_root / "config" / "gmail_credentials.json",
+                token_path=project_root / "config" / "gmail_token.json",
+                query=(
+                    'from:service@billu.tssco.com.tw has:attachment filename:pdf '
+                    'subject:"台新證券" "交割憑單" newer_than:30d'
+                ),
+                max_results=100,
+                all_missing=True,
+            )
+            message = (
+                f"stored={summary['stored']}; duplicate_message={summary['duplicate_message']}; "
+                f"duplicate_hash={summary['duplicate_hash']}; date_conflict={summary['date_conflict']}; "
+                f"failed={summary['failed']}"
+            )
+            finish_update_status(
+                central_db_path,
+                "gmail_statements",
+                "gmail",
+                started_at,
+                datetime.now().astimezone().isoformat(timespec="seconds"),
+                next_run_at=next_run,
+                status="failed" if summary["failed"] else "success",
+                message=message,
+            )
+            append_refresh_log(
+                refresh_log_path,
+                "schedule:gmail-statements",
+                "error" if summary["failed"] else "ok",
+                message,
+            )
+        except Exception as exc:
+            finish_update_status(
+                central_db_path,
+                "gmail_statements",
+                "gmail",
+                started_at,
+                datetime.now().astimezone().isoformat(timespec="seconds"),
+                next_run_at=next_run,
+                status="failed",
+                message=str(exc)[:240],
+            )
             raise
 
     def official_history_backfill_tick() -> None:
@@ -439,13 +522,13 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
                 status="failed",
                 message=str(exc)[:240],
             )
-            raise
 
     start_interval_refresh_scheduler(
         scheduled_refresh,
         refresh_log_path,
         interval_minutes=15,
         offset_minutes=1,
+        name="schedule:15m:central",
     )
     start_daily_time_scheduler(
         after_close_refresh,
@@ -459,11 +542,18 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
         run_times=["14:00"],
         name="schedule:official-daily",
     )
+    start_daily_time_scheduler(
+        gmail_statement_refresh,
+        refresh_log_path,
+        run_times=["23:30"],
+        name="schedule:gmail-statements",
+    )
     start_interval_refresh_scheduler(
         official_history_backfill_tick,
         refresh_log_path,
         interval_minutes=30,
         offset_minutes=7,
+        name="schedule:history-backfill",
     )
 
     if refresh_on_start:
@@ -504,9 +594,119 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
     def database_dividends_index():
         return render_template("dividends.html", profiles=profile_links())
 
+    @app.get("/database/logs")
+    def database_logs_index():
+        return render_template("logs.html", profiles=profile_links())
+
+    @app.get("/database/uploads")
+    def database_uploads_index():
+        return render_template("uploads.html", profiles=profile_links())
+
     @app.get("/api/database")
     def api_database():
-        return jsonify(database_payload(central_db_path, quote_cache_path))
+        return jsonify(
+            database_payload(
+                central_db_path,
+                quote_cache_path,
+                limit=request.args.get("limit"),
+                offset=request.args.get("offset"),
+                q=request.args.get("q", ""),
+                asset_type=request.args.get("type", ""),
+                market=request.args.get("market", ""),
+                exchange_suffix=request.args.get("suffix", ""),
+                history_status=request.args.get("history_status", ""),
+            )
+        )
+
+    @app.get("/api/database/logs")
+    def api_database_logs():
+        try:
+            limit = int(request.args.get("limit") or 80)
+            offset = int(request.args.get("offset") or 0)
+        except ValueError:
+            return jsonify({"ok": False, "error": "limit/offset must be numbers"}), 400
+        payload = list_operation_logs(
+            central_db_path,
+            limit=limit,
+            offset=offset,
+            status=str(request.args.get("status") or "").strip(),
+            job_name=str(request.args.get("job_name") or "").strip(),
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "updated_at": now_string(),
+                "data_status": data_status_payload(central_db_path),
+                **payload,
+            }
+        )
+
+    @app.get("/api/database/uploads")
+    def api_database_uploads():
+        try:
+            limit = int(request.args.get("limit") or 80)
+            offset = int(request.args.get("offset") or 0)
+        except ValueError:
+            return jsonify({"ok": False, "error": "limit/offset must be numbers"}), 400
+        payload = list_uploaded_documents(
+            central_db_path,
+            limit=limit,
+            offset=offset,
+            profile_slug=str(request.args.get("profile") or "").strip(),
+            status=str(request.args.get("status") or "").strip(),
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "updated_at": now_string(),
+                "data_status": data_status_payload(central_db_path),
+                **payload,
+            }
+        )
+
+    @app.post("/api/database/uploads")
+    def api_database_upload():
+        profile_slug = str(request.form.get("profile") or DEFAULT_PROFILE).strip()
+        if profile_slug not in PROFILES:
+            return jsonify({"ok": False, "error": "unknown profile"}), 400
+        return handle_upload_document(profile_slug)
+
+    @app.post("/api/database/uploads-base64")
+    def api_database_upload_base64():
+        payload = request.get_json(silent=True) or {}
+        profile_slug = str(payload.get("profile") or DEFAULT_PROFILE).strip()
+        if profile_slug not in PROFILES:
+            return jsonify({"ok": False, "error": "unknown profile"}), 400
+        return handle_upload_document_base64(profile_slug, payload)
+
+    @app.get("/api/database/uploads/<int:upload_id>/file")
+    def api_database_upload_file(upload_id: int):
+        document = get_uploaded_document(central_db_path, upload_id)
+        if not document:
+            abort(404)
+        path = safe_uploaded_document_path(project_root, document)
+        if not path.exists():
+            abort(404)
+        return send_file(
+            path,
+            mimetype=document.get("mime_type") or mimetypes.guess_type(path.name)[0],
+            as_attachment=False,
+            download_name=document.get("original_filename") or path.name,
+        )
+
+    @app.patch("/api/database/uploads/<int:upload_id>")
+    def api_database_upload_status(upload_id: int):
+        payload = request.get_json(silent=True) or {}
+        try:
+            document = update_uploaded_document_status(
+                central_db_path,
+                upload_id,
+                status=str(payload.get("status") or "stored"),
+                note=str(payload.get("note") or ""),
+            )
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 404
+        return jsonify({"ok": True, "document": document})
 
     @app.get("/api/database/dividends")
     def api_database_dividends():
@@ -694,10 +894,24 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
     @app.post("/api/database/instrument")
     def api_database_instrument():
         payload = request.get_json(silent=True) or {}
+        ticker = str(payload.get("ticker") or "").strip().upper()
+        if not ticker:
+            return jsonify({"ok": False, "error": "ticker is required"}), 400
+        existing = get_instrument(central_db_path, ticker)
+        if existing:
+            return jsonify(
+                {
+                    "ok": True,
+                    "duplicate": True,
+                    "instrument": existing,
+                    "message": f"{ticker} 已存在，未重複新增。",
+                    "database": database_payload(central_db_path, quote_cache_path),
+                }
+            )
         try:
             instrument = set_instrument(
                 central_db_path,
-                ticker=payload.get("ticker", ""),
+                ticker=ticker,
                 name=payload.get("name", ""),
                 asset_type=payload.get("type", ""),
                 exchange_suffix=payload.get("exchange_suffix", ".TW"),
@@ -708,7 +922,9 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
         return jsonify(
             {
                 "ok": True,
+                "duplicate": False,
                 "instrument": instrument,
+                "message": f"{instrument.get('ticker') or ticker} 已加入中央股票主檔。",
                 "database": database_payload(central_db_path, quote_cache_path),
             }
         )
@@ -749,7 +965,20 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
         instrument = get_instrument(central_db_path, ticker)
         if instrument is None:
             abort(404)
+        started_at = now_string()
         result = backfill_history_for_instrument(central_db_path, instrument)
+        finished_at = now_string()
+        record_operation_log(
+            central_db_path,
+            job_name=f"manual_history_check:{str(ticker).strip().upper()}",
+            source="manual",
+            event_type="history_check",
+            status="success" if result.get("ok") else "failed",
+            started_at=started_at,
+            finished_at=finished_at,
+            summary=result.get("message", ""),
+            details=result.get("message", ""),
+        )
         return jsonify(
             {
                 "ok": result["ok"],
@@ -764,12 +993,116 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
         instrument = get_instrument(central_db_path, ticker)
         if instrument is None:
             abort(404)
+        started_at = now_string()
         update_instrument_history_status(central_db_path, ticker, "delisted")
+        rebuild_health_summary(central_db_path)
+        finished_at = now_string()
+        record_operation_log(
+            central_db_path,
+            job_name=f"manual_mark_delisted:{str(ticker).strip().upper()}",
+            source="manual",
+            event_type="instrument_status",
+            status="success",
+            started_at=started_at,
+            finished_at=finished_at,
+            summary=f"{str(ticker).strip().upper()} marked as delisted",
+        )
         return jsonify(
             {
                 "ok": True,
                 "ticker": str(ticker).strip().upper(),
                 "message": f"{str(ticker).strip().upper()} marked as delisted",
+                "database": database_payload(central_db_path, quote_cache_path),
+            }
+        )
+
+    @app.post("/api/database/<ticker>/listing-date")
+    def api_database_listing_date(ticker: str):
+        instrument = get_instrument(central_db_path, ticker)
+        if instrument is None:
+            abort(404)
+        payload = request.get_json(silent=True) or {}
+        listing_date = str(payload.get("listing_date") or "").strip()
+        try:
+            parse_iso_date(listing_date)
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "listing_date must be YYYY-MM-DD"}), 400
+        started_at = now_string()
+        update_instrument_listing_date(central_db_path, ticker, listing_date)
+        rebuild_health_summary(central_db_path)
+        finished_at = now_string()
+        record_operation_log(
+            central_db_path,
+            job_name=f"manual_listing_date:{str(ticker).strip().upper()}",
+            source="manual",
+            event_type="instrument_master",
+            status="success",
+            started_at=started_at,
+            finished_at=finished_at,
+            summary=f"{str(ticker).strip().upper()} listing_date={listing_date}",
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "ticker": str(ticker).strip().upper(),
+                "listing_date": listing_date,
+                "message": f"{str(ticker).strip().upper()} 已更新上市/掛牌日 {listing_date}",
+                "database": database_payload(central_db_path, quote_cache_path),
+            }
+        )
+
+    @app.post("/api/database/<ticker>/split")
+    def api_database_split(ticker: str):
+        instrument = get_instrument(central_db_path, ticker)
+        if instrument is None:
+            abort(404)
+        payload = request.get_json(silent=True) or {}
+        effective_date = str(payload.get("effective_date") or "").strip()
+        try:
+            parse_iso_date(effective_date)
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "effective_date must be YYYY-MM-DD"}), 400
+        ratio_from = as_float(payload.get("ratio_from"), 0) or 0
+        ratio_to = as_float(payload.get("ratio_to"), 0) or 0
+        if ratio_from <= 0 or ratio_to <= 0:
+            return jsonify({"ok": False, "error": "ratio_from and ratio_to must be greater than 0"}), 400
+        note = str(payload.get("note") or "").strip()
+        started_at = now_string()
+        action = add_split_action(
+            central_db_path,
+            ticker=ticker,
+            effective_date=effective_date,
+            ratio_from=ratio_from,
+            ratio_to=ratio_to,
+            note=note,
+            source="manual",
+        )
+        split_actions = list_corporate_actions(central_db_path)
+        for slug in PROFILES:
+            state_path = profile_state_path(project_root, slug)
+            state = load_state(state_path)
+            rebuild_holdings_from_transactions(state, split_actions)
+            save_state(state_path, state)
+        rebuild_health_summary(central_db_path)
+        normalized = str(ticker).strip().upper()
+        finished_at = now_string()
+        record_operation_log(
+            central_db_path,
+            job_name=f"manual_split:{normalized}",
+            source="manual",
+            event_type="corporate_action",
+            status="success",
+            started_at=started_at,
+            finished_at=finished_at,
+            summary=f"{normalized} split {effective_date} {ratio_from:g}:{ratio_to:g}",
+            details=json.dumps(action, ensure_ascii=False),
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "ticker": normalized,
+                "action": action,
+                "message": f"{normalized} 已新增分割 {effective_date} {ratio_from:g}:{ratio_to:g}",
                 "database": database_payload(central_db_path, quote_cache_path),
             }
         )
@@ -781,6 +1114,7 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
             abort(404)
 
         ticker = str(ticker or "").strip().upper()
+        started_at = now_string()
         today = date.today()
         stats = ohlcv_daily_stats(central_db_path, ticker)
         bar_count = as_float(stats.get("bar_count"), 0) or 0
@@ -792,6 +1126,17 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
             start_date = parse_iso_date(last_date_text) + timedelta(days=1)
             mode = "catch_up"
         if start_date > today:
+            finished_at = now_string()
+            record_operation_log(
+                central_db_path,
+                job_name=f"manual_history_refresh:{ticker}",
+                source="manual",
+                event_type="history_refresh",
+                status="success",
+                started_at=started_at,
+                finished_at=finished_at,
+                summary=f"{ticker} already current",
+            )
             return jsonify(
                 {
                     "ok": True,
@@ -827,6 +1172,7 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
                 break
 
         written = upsert_ohlcv_daily(central_db_path, rows)
+        rebuild_health_summary(central_db_path)
         if rows and used_suffix != primary_suffix:
             set_instrument(
                 central_db_path,
@@ -842,6 +1188,18 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
             "官方 API 查無日線資料；若此股已下市，之後可手動標記已下市。"
             if not rows
             else f"{used_source} 已更新日線 {written} 筆。"
+        )
+        finished_at = now_string()
+        record_operation_log(
+            central_db_path,
+            job_name=f"manual_history_refresh:{ticker}",
+            source=used_source if rows else "official",
+            event_type="history_refresh",
+            status="success" if rows else "failed",
+            started_at=started_at,
+            finished_at=finished_at,
+            summary=f"{ticker} fetched={len(rows)} written={written}",
+            details=json.dumps(attempts, ensure_ascii=False),
         )
         return jsonify(
             {
@@ -865,6 +1223,11 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
         profile = profile_info(profile_slug)
         return render_template("dashboard.html", profile=profile)
 
+    @app.get("/<profile_slug>/stocks")
+    def profile_stock_details(profile_slug: str):
+        profile = profile_info(profile_slug)
+        return render_template("stock_detail.html", profile=profile)
+
     @app.get("/<profile_slug>/api/state")
     def api_state(profile_slug: str):
         return jsonify(current_dashboard(profile_slug, force=False))
@@ -885,6 +1248,30 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
         dashboard = current_dashboard(profile_slug, force=False)
         dashboard["cash_result"] = result
         return jsonify(dashboard)
+
+    @app.post("/<profile_slug>/api/dividend-income")
+    def api_dividend_income(profile_slug: str):
+        state_path = profile_state_path(project_root, profile_slug)
+        payload = request.get_json(silent=True) or {}
+        try:
+            result = record_dividend_income_from_payload(state_path, payload)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+        dashboard = current_dashboard(profile_slug, force=False)
+        dashboard["dividend_income_result"] = result
+        return jsonify(dashboard)
+
+    @app.post("/<profile_slug>/api/uploads")
+    def api_profile_upload(profile_slug: str):
+        profile_info(profile_slug)
+        return handle_upload_document(profile_slug)
+
+    @app.post("/<profile_slug>/api/uploads-base64")
+    def api_profile_upload_base64(profile_slug: str):
+        profile_info(profile_slug)
+        payload = request.get_json(silent=True) or {}
+        return handle_upload_document_base64(profile_slug, payload)
 
     @app.post("/<profile_slug>/api/transaction")
     def api_transaction(profile_slug: str):
@@ -910,7 +1297,7 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
         state_path = profile_state_path(project_root, profile_slug)
         payload = request.get_json(silent=True) or {}
         try:
-            result = update_transaction_from_payload(state_path, transaction_id, payload)
+            result = update_transaction_from_payload(state_path, transaction_id, payload, central_db_path=central_db_path)
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
 
@@ -922,13 +1309,339 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
     def api_delete_transaction(profile_slug: str, transaction_id: str):
         state_path = profile_state_path(project_root, profile_slug)
         try:
-            result = delete_transaction_from_payload(state_path, transaction_id)
+            result = delete_transaction_from_payload(state_path, transaction_id, central_db_path=central_db_path)
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
 
         dashboard = current_dashboard(profile_slug, force=True, source=f"transaction-delete:{result.get('ticker', '')}")
         dashboard["transaction_delete_result"] = result
         return jsonify(dashboard)
+
+    @app.post("/<profile_slug>/api/import/extract")
+    def api_import_extract(profile_slug: str):
+        profile_info(profile_slug)
+        started_at = now_string()
+        upload = request.files.get("file")
+        if upload is None or not upload.filename:
+            return jsonify({"ok": False, "error": "missing file"}), 400
+        filename = str(upload.filename or "")
+        content_type = str(upload.content_type or "").lower()
+        password = str(request.form.get("password") or "")
+        payload = upload.read()
+        if not payload:
+            return jsonify({"ok": False, "error": "empty file"}), 400
+        if filename.lower().endswith(".pdf") or content_type == "application/pdf":
+            try:
+                result = extract_pdf_text(payload, password=password)
+            except ValueError as exc:
+                record_operation_log(
+                    central_db_path,
+                    job_name="pdf_import_extract",
+                    source="browser_upload",
+                    event_type="import_extract",
+                    status="failed",
+                    started_at=started_at,
+                    finished_at=now_string(),
+                    summary=f"{filename} value_error",
+                    details=str(exc),
+                )
+                return jsonify({"ok": False, "error": str(exc)}), 400
+            except Exception as exc:
+                record_operation_log(
+                    central_db_path,
+                    job_name="pdf_import_extract",
+                    source="browser_upload",
+                    event_type="import_extract",
+                    status="failed",
+                    started_at=started_at,
+                    finished_at=now_string(),
+                    summary=f"{filename} extract_error",
+                    details=str(exc),
+                )
+                return jsonify({"ok": False, "error": f"PDF extract failed: {str(exc)[:180]}"}), 422
+            record_operation_log(
+                central_db_path,
+                job_name="pdf_import_extract",
+                source="browser_upload",
+                event_type="import_extract",
+                status="success",
+                started_at=started_at,
+                finished_at=now_string(),
+                summary=f"{filename} pages={result.get('page_count')} chars={result.get('char_count')}",
+            )
+            return jsonify({"ok": True, "kind": "pdf", **result})
+        if content_type.startswith("image/"):
+            return jsonify(
+                {
+                    "ok": False,
+                    "kind": "image",
+                    "error": "本機尚未安裝 OCR 引擎。圖片可以預覽，但請先用 Google Lens / AI 轉文字後再貼上。",
+                }
+            ), 422
+        return jsonify({"ok": False, "error": "只支援 PDF 或圖片檔"}), 400
+
+    @app.post("/<profile_slug>/api/import/extract-base64")
+    def api_import_extract_base64(profile_slug: str):
+        profile_info(profile_slug)
+        started_at = now_string()
+        payload = request.get_json(silent=True) or {}
+        filename = str(payload.get("filename") or "upload.pdf")
+        content_type = str(payload.get("content_type") or "").lower()
+        password = str(payload.get("password") or "")
+        encoded = str(payload.get("data") or "")
+        if "," in encoded and encoded.strip().lower().startswith("data:"):
+            encoded = encoded.split(",", 1)[1]
+        if not encoded:
+            return jsonify({"ok": False, "error": "missing base64 data"}), 400
+        try:
+            file_bytes = base64.b64decode(encoded, validate=True)
+        except Exception:
+            return jsonify({"ok": False, "error": "base64 decode failed"}), 400
+        if not file_bytes:
+            return jsonify({"ok": False, "error": "empty file"}), 400
+        if len(file_bytes) > 25 * 1024 * 1024:
+            return jsonify({"ok": False, "error": "PDF too large; max 25 MB"}), 413
+        if filename.lower().endswith(".pdf") or content_type == "application/pdf":
+            try:
+                result = extract_pdf_text(file_bytes, password=password)
+            except ValueError as exc:
+                record_operation_log(
+                    central_db_path,
+                    job_name="pdf_import_extract_base64",
+                    source="browser_base64",
+                    event_type="import_extract",
+                    status="failed",
+                    started_at=started_at,
+                    finished_at=now_string(),
+                    summary=f"{filename} value_error",
+                    details=str(exc),
+                )
+                return jsonify({"ok": False, "error": str(exc)}), 400
+            except Exception as exc:
+                record_operation_log(
+                    central_db_path,
+                    job_name="pdf_import_extract_base64",
+                    source="browser_base64",
+                    event_type="import_extract",
+                    status="failed",
+                    started_at=started_at,
+                    finished_at=now_string(),
+                    summary=f"{filename} extract_error",
+                    details=str(exc),
+                )
+                return jsonify({"ok": False, "error": f"PDF extract failed: {str(exc)[:180]}"}), 422
+            record_operation_log(
+                central_db_path,
+                job_name="pdf_import_extract_base64",
+                source="browser_base64",
+                event_type="import_extract",
+                status="success",
+                started_at=started_at,
+                finished_at=now_string(),
+                summary=f"{filename} pages={result.get('page_count')} chars={result.get('char_count')}",
+            )
+            return jsonify({"ok": True, "kind": "pdf", **result})
+        return jsonify({"ok": False, "error": "只支援 PDF"}), 400
+
+    @app.post("/<profile_slug>/api/import/extract-latest-local")
+    def api_import_extract_latest_local(profile_slug: str):
+        profile_info(profile_slug)
+        payload = request.get_json(silent=True) or {}
+        password = str(payload.get("password") or request.form.get("password") or request.args.get("password") or "")
+        folder = project_root / "到現在的買賣"
+        pdfs = sorted(
+            [path for path in folder.glob("*.pdf") if path.is_file()],
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        if not pdfs:
+            return jsonify({"ok": False, "error": "到現在的買賣資料夾沒有 PDF"}), 404
+        path = pdfs[0]
+        try:
+            result = extract_pdf_text(path.read_bytes(), password=password)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc), "filename": path.name}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"PDF extract failed: {str(exc)[:180]}", "filename": path.name}), 422
+        return jsonify({"ok": True, "kind": "pdf", "filename": path.name, **result})
+
+    def handle_upload_document(profile_slug: str):
+        uploaded = request.files.get("file") or request.files.get("document")
+        if not uploaded or not uploaded.filename:
+            return jsonify({"ok": False, "error": "請選擇 PDF 或截圖檔案"}), 400
+        payload = uploaded.read()
+        if not payload:
+            return jsonify({"ok": False, "error": "檔案是空的"}), 400
+        max_bytes = 25 * 1024 * 1024
+        if len(payload) > max_bytes:
+            return jsonify({"ok": False, "error": "檔案超過 25MB，請先壓縮或分批上傳"}), 400
+
+        original = uploaded.filename
+        mime_type = uploaded.mimetype or mimetypes.guess_type(original)[0] or "application/octet-stream"
+        allowed_mimes = {
+            "application/pdf",
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+            "image/heic",
+            "image/heif",
+        }
+        if mime_type not in allowed_mimes and not mime_type.startswith("image/"):
+            return jsonify({"ok": False, "error": f"不支援的檔案類型：{mime_type}"}), 400
+
+        digest = hashlib.sha256(payload).hexdigest()
+        today = date.today()
+        upload_dir = project_root / "data" / "uploads" / profile_slug / f"{today:%Y}" / f"{today:%m}"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = secure_filename(original) or "upload"
+        suffix = Path(safe_name).suffix.lower()
+        stored_name = f"{today:%Y%m%d}_{uuid.uuid4().hex[:12]}{suffix}"
+        stored_path = upload_dir / stored_name
+        stored_path.write_bytes(payload)
+
+        relative_path = str(stored_path.relative_to(project_root)).replace("\\", "/")
+        document = record_uploaded_document(
+            central_db_path,
+            profile_slug=profile_slug,
+            original_filename=original,
+            stored_path=relative_path,
+            mime_type=mime_type,
+            file_size=len(payload),
+            sha256=digest,
+            source=str(request.form.get("source") or "manual_upload"),
+            status="stored",
+            note=str(request.form.get("note") or ""),
+        )
+        if document.get("duplicate"):
+            try:
+                stored_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+        record_operation_log(
+            central_db_path,
+            job_name="document_upload",
+            source=profile_slug,
+            event_type="upload",
+            status="success",
+            summary=f"{original}; {len(payload)} bytes; duplicate={bool(document.get('duplicate'))}",
+            details=json.dumps(
+                {
+                    "profile": profile_slug,
+                    "filename": original,
+                    "mime_type": mime_type,
+                    "size": len(payload),
+                    "sha256": digest,
+                    "duplicate": bool(document.get("duplicate")),
+                },
+                ensure_ascii=False,
+            ),
+        )
+        return jsonify({"ok": True, "document": document})
+
+    def handle_upload_document_base64(profile_slug: str, payload: dict[str, Any]):
+        filename = str(payload.get("filename") or "upload").strip() or "upload"
+        content_type = str(payload.get("content_type") or mimetypes.guess_type(filename)[0] or "application/octet-stream")
+        encoded = str(payload.get("data") or "")
+        if "," in encoded and encoded.strip().lower().startswith("data:"):
+            encoded = encoded.split(",", 1)[1]
+        if not encoded:
+            return jsonify({"ok": False, "error": "missing base64 data"}), 400
+        try:
+            file_bytes = base64.b64decode(encoded, validate=True)
+        except Exception:
+            return jsonify({"ok": False, "error": "base64 decode failed"}), 400
+        return store_uploaded_document_bytes(
+            profile_slug,
+            filename=filename,
+            mime_type=content_type,
+            payload=file_bytes,
+            source=str(payload.get("source") or "manual_upload_base64"),
+            note=str(payload.get("note") or ""),
+        )
+
+    def store_uploaded_document_bytes(
+        profile_slug: str,
+        *,
+        filename: str,
+        mime_type: str,
+        payload: bytes,
+        source: str,
+        note: str = "",
+    ):
+        if not payload:
+            return jsonify({"ok": False, "error": "檔案是空的"}), 400
+        max_bytes = 25 * 1024 * 1024
+        if len(payload) > max_bytes:
+            return jsonify({"ok": False, "error": "檔案超過 25MB，請先壓縮或分批上傳"}), 400
+        allowed_mimes = {
+            "application/pdf",
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+            "image/heic",
+            "image/heif",
+        }
+        if mime_type not in allowed_mimes and not mime_type.startswith("image/"):
+            return jsonify({"ok": False, "error": f"不支援的檔案類型：{mime_type}"}), 400
+
+        digest = hashlib.sha256(payload).hexdigest()
+        today = date.today()
+        upload_dir = project_root / "data" / "uploads" / profile_slug / f"{today:%Y}" / f"{today:%m}"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = secure_filename(filename) or "upload"
+        suffix = Path(safe_name).suffix.lower()
+        stored_name = f"{today:%Y%m%d}_{uuid.uuid4().hex[:12]}{suffix}"
+        stored_path = upload_dir / stored_name
+        stored_path.write_bytes(payload)
+
+        relative_path = str(stored_path.relative_to(project_root)).replace("\\", "/")
+        document = record_uploaded_document(
+            central_db_path,
+            profile_slug=profile_slug,
+            original_filename=filename,
+            stored_path=relative_path,
+            mime_type=mime_type,
+            file_size=len(payload),
+            sha256=digest,
+            source=source,
+            status="stored",
+            note=note,
+        )
+        if document.get("duplicate"):
+            try:
+                stored_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        record_operation_log(
+            central_db_path,
+            job_name="document_upload",
+            source=profile_slug,
+            event_type="upload",
+            status="success",
+            summary=f"{filename}; {len(payload)} bytes; duplicate={bool(document.get('duplicate'))}",
+            details=json.dumps(
+                {
+                    "profile": profile_slug,
+                    "filename": filename,
+                    "mime_type": mime_type,
+                    "size": len(payload),
+                    "sha256": digest,
+                    "duplicate": bool(document.get("duplicate")),
+                    "source": source,
+                },
+                ensure_ascii=False,
+            ),
+        )
+        return jsonify({"ok": True, "document": document})
+
+    def safe_uploaded_document_path(project_root: Path, document: dict[str, Any]) -> Path:
+        relative = str(document.get("stored_path") or "").replace("\\", "/")
+        path = (project_root / relative).resolve()
+        upload_root = (project_root / "data" / "uploads").resolve()
+        if upload_root not in path.parents and path != upload_root:
+            abort(403)
+        return path
 
     @app.get("/<profile_slug>/ai")
     def ai_report(profile_slug: str):
@@ -974,11 +1687,71 @@ def ensure_profile_files(project_root: Path) -> None:
         save_state(mom_path, mom_state)
 
 
+def extract_pdf_text(payload: bytes, password: str = "") -> dict[str, Any]:
+    from io import BytesIO
+
+    reader = PdfReader(BytesIO(payload))
+    if reader.is_encrypted:
+        password_text = str(password or "")
+        if not password_text:
+            raise ValueError("PDF 需要密碼，請輸入密碼後再抽文字。")
+        if reader.decrypt(password_text) == 0:
+            raise ValueError("PDF 密碼錯誤，無法抽文字。")
+    pages: list[dict[str, Any]] = []
+    parts: list[str] = []
+    for index, page in enumerate(reader.pages, start=1):
+        text = page.extract_text() or ""
+        text = normalize_extracted_statement_text(text)
+        pages.append({"page": index, "chars": len(text)})
+        if text:
+            parts.append(text)
+    full_text = "\n".join(parts).strip()
+    if not full_text:
+        raise ValueError("PDF 沒有可抽取文字，可能是掃描圖檔，需要 OCR。")
+    return {
+        "text": full_text,
+        "page_count": len(reader.pages),
+        "pages": pages,
+        "char_count": len(full_text),
+    }
+
+
+def normalize_extracted_statement_text(text: str) -> str:
+    lines = []
+    for raw_line in str(text or "").replace("\r", "\n").split("\n"):
+        line = " ".join(raw_line.split())
+        if line:
+            lines.append(line)
+    return "\n".join(lines)
+
+
 def seed_central_from_profiles(project_root: Path, central_db_path: Path) -> None:
     for profile_slug in PROFILES:
         state_path = profile_state_path(project_root, profile_slug)
         if state_path.exists():
             seed_instruments_from_state(central_db_path, load_state(state_path))
+
+
+def sync_official_listing_dates(central_db_path: Path) -> None:
+    try:
+        twse_profiles = fetch_twse_listed_company_profiles()
+    except Exception:
+        return
+    for item in list_instruments(central_db_path):
+        if item.get("type") == "ETF" or item.get("exchange_suffix") != ".TW":
+            continue
+        profile = twse_profiles.get(str(item.get("ticker") or "").strip().upper())
+        if not profile or not profile.get("listing_date"):
+            continue
+        set_instrument(
+            central_db_path,
+            ticker=item["ticker"],
+            name=item.get("name", "") or profile.get("name", ""),
+            asset_type=item.get("type", ""),
+            exchange_suffix=item.get("exchange_suffix", ".TW"),
+            source=item.get("source", "profile"),
+            listing_date=profile["listing_date"],
+        )
 
 
 def tracked_profile_items(project_root: Path, central_db_path: Path) -> list[dict[str, Any]]:
@@ -998,6 +1771,27 @@ def tracked_profile_items(project_root: Path, central_db_path: Path) -> list[dic
             if ticker and (symbol.endswith(".TW") or symbol.endswith(".TWO")):
                 items_by_ticker[ticker] = item
     return list(items_by_ticker.values())
+
+
+def trade_import_known_items(raw_state: dict[str, Any], central_db_path: Path) -> list[dict[str, str]]:
+    by_ticker: dict[str, dict[str, str]] = {}
+    for item in raw_state.get("holdings", []) + raw_state.get("watchlist", []):
+        ticker = str(item.get("ticker") or "").strip().upper()
+        if not ticker:
+            continue
+        by_ticker[ticker] = {
+            "ticker": ticker,
+            "name": str(item.get("name") or "").strip(),
+        }
+    for item in list_instruments(central_db_path):
+        ticker = str(item.get("ticker") or "").strip().upper()
+        if not ticker or ticker in by_ticker:
+            continue
+        by_ticker[ticker] = {
+            "ticker": ticker,
+            "name": str(item.get("name") or "").strip(),
+        }
+    return sorted(by_ticker.values(), key=lambda item: (item["ticker"], item["name"]))
 
 
 def fetch_official_daily_resilient(
@@ -1032,6 +1826,14 @@ def fetch_official_daily_resilient(
     return filtered, errors
 
 
+def fetch_official_month(ticker: str, exchange_suffix: str, month_start: date) -> list[dict[str, Any]]:
+    return (
+        fetch_tpex_month(ticker, month_start)
+        if str(exchange_suffix).upper() == ".TWO"
+        else fetch_twse_month(ticker, month_start)
+    )
+
+
 def backfill_one_missing_history(central_db_path: Path) -> dict[str, Any]:
     candidate = pick_history_backfill_candidate(central_db_path)
     if candidate is None:
@@ -1040,35 +1842,69 @@ def backfill_one_missing_history(central_db_path: Path) -> dict[str, Any]:
 
 
 def pick_history_backfill_candidate(central_db_path: Path) -> dict[str, Any] | None:
-    today = date.today()
     candidates: list[dict[str, Any]] = []
     for item in list_instruments(central_db_path):
-        status = str(item.get("history_status") or "")
-        if status in {"delisted", "suspect_delisted"}:
+        item = {**item, "_central_db_path": str(central_db_path)}
+        instrument_status = str(item.get("status") or "")
+        history_status = str(item.get("history_status") or "")
+        if instrument_status == "delisted" or history_status == "delisted":
             continue
-        if history_is_insufficient(item, today):
+        if int(item.get("manual_review_required") or 0) or history_status == "manual_review":
+            continue
+        next_retry_at = parse_datetime_or_none(item.get("next_retry_at"))
+        if next_retry_at and next_retry_at > datetime.now().astimezone():
+            continue
+        if history_status in {"recent_missing", "broken", "symbol_problem"}:
+            candidates.append(item)
+            continue
+        if int(item.get("daily_bar_count") or 0) <= 0:
+            candidates.append(item)
+            continue
+        if history_status in {"partial_old_missing", "recent_ok_partial_history"}:
             candidates.append(item)
     if not candidates:
         return None
-    return sorted(candidates, key=lambda item: str(item.get("history_checked_at") or ""))[0]
+    priorities = {
+        "recent_missing": 0,
+        "broken": 1,
+        "symbol_problem": 2,
+        "partial_old_missing": 10,
+        "recent_ok_partial_history": 20,
+    }
+    return sorted(
+        candidates,
+        key=lambda item: (
+            priorities.get(str(item.get("history_status") or ""), 5 if int(item.get("daily_bar_count") or 0) <= 0 else 50),
+            str(item.get("last_checked_at") or item.get("history_checked_at") or ""),
+            str(item.get("ticker") or ""),
+        ),
+    )[0]
 
 
 def history_is_insufficient(item: dict[str, Any], today: date) -> bool:
-    target_start = history_target_start(item, today)
-    first_date = parse_date_or_none(item.get("daily_first_date"))
-    last_date = parse_date_or_none(item.get("daily_last_date"))
-    bar_count = int(as_float(item.get("daily_bar_count"), 0) or 0)
-    if last_date is None:
-        return True
-    if last_date < today - timedelta(days=3):
-        return True
-    if first_date is None:
-        return True
-    days = max(0, (today - target_start).days)
-    expected_min = max(3, int(days * 0.5))
-    if first_date > target_start + timedelta(days=14) and bar_count < expected_min:
-        return True
-    return bar_count < expected_min
+    return bool(missing_months_from_summary(item))
+
+
+def missing_history_months(item: dict[str, Any], today: date) -> list[date]:
+    return missing_months_from_summary(item)
+
+
+def history_coverage_payload(central_db_path: Path, item: dict[str, Any], today: date | None = None) -> dict[str, Any]:
+    today = today or date.today()
+    scoped_item = {**item, "_central_db_path": str(central_db_path)}
+    missing = missing_months_from_summary(scoped_item)
+    target_start_text = str(scoped_item.get("expected_start_date") or "")
+    return {
+        "history_target_start": target_start_text,
+        "missing_month_count": len(missing),
+        "first_missing_month": missing[0].strftime("%Y-%m") if missing else "",
+        "last_missing_month": missing[-1].strftime("%Y-%m") if missing else "",
+        "history_coverage_status": "complete" if not missing else "missing_months",
+    }
+
+
+def reconcile_history_coverage_statuses(central_db_path: Path) -> None:
+    rebuild_health_summary(central_db_path)
 
 
 def history_target_start(item: dict[str, Any], today: date) -> date:
@@ -1087,45 +1923,80 @@ def backfill_history_for_instrument(central_db_path: Path, instrument: dict[str,
     ticker = str(instrument.get("ticker") or "").strip().upper()
     if not ticker:
         return {"ok": False, "message": "missing ticker"}
+    if str(instrument.get("status") or "") == "delisted" or str(instrument.get("history_status") or "") == "delisted":
+        return {"ok": True, "message": f"{ticker} is marked delisted; skipped"}
 
     today = date.today()
-    target_start = history_target_start(instrument, today)
     stats = ohlcv_daily_stats(central_db_path, ticker)
-    first_date = parse_date_or_none(stats.get("first_date"))
-    last_date = parse_date_or_none(stats.get("last_date"))
-    if last_date and last_date >= today - timedelta(days=3) and first_date and first_date <= target_start + timedelta(days=14):
-        update_instrument_history_status(central_db_path, ticker, "ok")
-        return {"ok": True, "message": f"{ticker} daily history already sufficient"}
-
-    start_date = target_start
-    if last_date and first_date and first_date <= target_start + timedelta(days=14):
-        start_date = last_date + timedelta(days=1)
-    if start_date > today:
-        update_instrument_history_status(central_db_path, ticker, "ok")
-        return {"ok": True, "message": f"{ticker} daily history already current"}
+    current_view = next(
+        (
+            item
+            for item in list_instruments(central_db_path)
+            if str(item.get("ticker") or "").strip().upper() == ticker
+        ),
+        instrument,
+    )
+    missing_months = missing_months_from_summary(current_view)
+    if not missing_months:
+        rebuild_health_summary(central_db_path)
+        return {"ok": True, "message": f"{ticker} daily history already sufficient by health summary"}
 
     primary_suffix = str(instrument.get("exchange_suffix") or ".TW").upper()
     suffixes = [primary_suffix, ".TWO" if primary_suffix == ".TW" else ".TW"]
     rows: list[dict[str, Any]] = []
     used_suffix = primary_suffix
     attempts: list[str] = []
-    for suffix in suffixes:
-        fetched, errors = fetch_official_daily_resilient(ticker, suffix, start_date, today, pause_seconds=0.12)
-        source = "TPEX" if suffix == ".TWO" else "TWSE"
-        attempts.append(f"{source}:{len(fetched)}")
-        if errors:
-            attempts.append(f"{source}_errors:{len(errors)}")
-        if fetched:
-            rows = fetched
-            used_suffix = suffix
+    had_request_error = False
+
+    for month_start in missing_months[:1]:
+        month_rows: list[dict[str, Any]] = []
+        for suffix in suffixes:
+            source = "TPEX" if suffix == ".TWO" else "TWSE"
+            try:
+                fetched = fetch_official_month(ticker, suffix, month_start)
+            except Exception as exc:
+                had_request_error = True
+                attempts.append(f"{month_start:%Y-%m} {source}_error:{str(exc)[:80]}")
+                continue
+            attempts.append(f"{month_start:%Y-%m} {source}:{len(fetched)}")
+            if fetched:
+                month_rows = fetched
+                used_suffix = suffix
+                break
+        rows.extend(month_rows)
+        if rows:
             break
 
     if not rows:
-        next_status = next_no_data_status(str(instrument.get("history_status") or ""))
-        update_instrument_history_status(central_db_path, ticker, next_status)
+        next_retry_at = (datetime.now().astimezone() + timedelta(hours=6)).isoformat(timespec="seconds")
+        if had_request_error:
+            record_market_data_problem(
+                central_db_path,
+                ticker,
+                "broken",
+                "official_no_data",
+                "high",
+                f"official daily fetch error; attempts={'; '.join(attempts[:4])}",
+                next_retry_at=next_retry_at,
+            )
+            return {
+                "ok": False,
+                "message": f"{ticker} official daily fetch error; missing_months={len(missing_months)}; attempts={'; '.join(attempts[:4])}",
+            }
+        prior_retry = int(current_view.get("retry_count") or 0)
+        next_status = "delisted_candidate" if prior_retry + 1 >= 3 else "recent_missing"
+        record_market_data_problem(
+            central_db_path,
+            ticker,
+            next_status,
+            "official_no_data" if next_status != "delisted_candidate" else "delisted_candidate",
+            "medium" if next_status == "delisted_candidate" else "high",
+            f"no official daily rows; missing_months={len(missing_months)}; attempts={','.join(attempts[:6])}",
+            next_retry_at=next_retry_at,
+        )
         return {
             "ok": False,
-            "message": f"{ticker} no official daily rows; attempts={','.join(attempts)}; status={next_status}",
+            "message": f"{ticker} no official daily rows; missing_months={len(missing_months)}; attempts={','.join(attempts[:6])}; status={next_status}",
         }
 
     written = upsert_ohlcv_daily(central_db_path, rows)
@@ -1138,23 +2009,54 @@ def backfill_history_for_instrument(central_db_path: Path, instrument: dict[str,
             exchange_suffix=used_suffix,
             source="official_detected",
         )
+    summaries = rebuild_health_summary(central_db_path)
     refreshed_stats = ohlcv_daily_stats(central_db_path, ticker)
-    listing_date = str(refreshed_stats.get("first_date") or "")
-    update_instrument_history_status(central_db_path, ticker, "ok", listing_date=listing_date)
+    status = next(
+        (
+            row.get("history_status", "")
+            for row in summaries
+            if str(row.get("instrument_id") or "").endswith(f":{ticker}")
+        ),
+        "",
+    )
     return {
         "ok": True,
-        "message": f"{ticker} daily backfill wrote {written} rows; first={listing_date}; last={refreshed_stats.get('last_date')}",
+        "message": f"{ticker} daily backfill wrote {written} rows; status={status}; missing_months={len(missing_months)}; first={refreshed_stats.get('first_date')}; last={refreshed_stats.get('last_date')}",
     }
 
 
-def next_no_data_status(current_status: str) -> str:
-    if current_status == "suspect_delisted":
-        return "suspect_delisted"
-    if current_status == "no_data_1":
-        return "no_data_2"
-    if current_status == "no_data_2":
-        return "suspect_delisted"
-    return "no_data_1"
+def missing_months_from_summary(item: dict[str, Any]) -> list[date]:
+    raw = item.get("missing_months_json")
+    months: list[str] = []
+    if raw:
+        try:
+            parsed = json.loads(str(raw))
+            if isinstance(parsed, list):
+                months = [str(value) for value in parsed]
+        except json.JSONDecodeError:
+            months = []
+    if not months and item.get("first_missing_month"):
+        months = [str(item["first_missing_month"])]
+    parsed_months: list[date] = []
+    for month in months:
+        try:
+            parsed_months.append(datetime.strptime(month[:7], "%Y-%m").date().replace(day=1))
+        except ValueError:
+            continue
+    return parsed_months
+
+
+def parse_datetime_or_none(value: object) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.astimezone()
+    return parsed
 
 
 def parse_date_or_none(value: object) -> date | None:
@@ -1533,26 +2435,61 @@ def profile_links() -> list[dict[str, str]]:
     ]
 
 
-def database_payload(central_db_path: Path, quote_cache_path: Path) -> dict[str, Any]:
-    instruments = list_instruments(central_db_path, quote_cache=load_quote_cache(quote_cache_path))
-    quote_count = sum(1 for item in instruments if item.get("close") is not None)
-    tw_count = sum(1 for item in instruments if item.get("exchange_suffix") == ".TW")
-    two_count = sum(1 for item in instruments if item.get("exchange_suffix") == ".TWO")
-    etf_count = sum(1 for item in instruments if item.get("segment") == "etf")
-    listed_count = sum(1 for item in instruments if item.get("segment") == "twse")
-    otc_count = sum(1 for item in instruments if item.get("segment") == "tpex")
+def database_payload(
+    central_db_path: Path,
+    quote_cache_path: Path,
+    limit: object = None,
+    offset: object = 0,
+    q: str = "",
+    asset_type: str = "",
+    market: str = "",
+    exchange_suffix: str = "",
+    history_status: str = "",
+) -> dict[str, Any]:
+    all_matching = list_instruments(
+        central_db_path,
+        quote_cache=load_quote_cache(quote_cache_path),
+        q=str(q or "").strip(),
+        asset_type=str(asset_type or "").strip().upper(),
+        market=str(market or "").strip().upper(),
+        exchange_suffix=str(exchange_suffix or "").strip().upper(),
+        history_status=str(history_status or "").strip(),
+    )
+    try:
+        normalized_offset = max(int(offset or 0), 0)
+    except (TypeError, ValueError):
+        normalized_offset = 0
+    try:
+        normalized_limit = int(limit) if limit not in (None, "") else 200
+    except (TypeError, ValueError):
+        normalized_limit = 200
+    normalized_limit = max(min(normalized_limit, 500), 1)
+    instruments = all_matching[normalized_offset : normalized_offset + normalized_limit]
+    quote_count = sum(1 for item in all_matching if item.get("close") is not None)
+    tw_count = sum(1 for item in all_matching if item.get("exchange_suffix") == ".TW")
+    two_count = sum(1 for item in all_matching if item.get("exchange_suffix") == ".TWO")
+    etf_count = sum(1 for item in all_matching if item.get("segment") == "etf")
+    listed_count = sum(1 for item in all_matching if item.get("segment") == "twse")
+    otc_count = sum(1 for item in all_matching if item.get("segment") == "tpex")
     return {
         "updated_at": now_string(),
         "data_status": data_status_payload(central_db_path),
+        "pagination": {
+            "limit": normalized_limit,
+            "offset": normalized_offset,
+            "returned": len(instruments),
+            "total": len(all_matching),
+            "has_more": normalized_offset + len(instruments) < len(all_matching),
+        },
         "summary": {
-            "instrument_count": len(instruments),
+            "instrument_count": len(all_matching),
             "tw_count": tw_count,
             "two_count": two_count,
             "etf_count": etf_count,
             "listed_count": listed_count,
             "otc_count": otc_count,
             "quote_count": quote_count,
-            "missing_quote_count": len(instruments) - quote_count,
+            "missing_quote_count": len(all_matching) - quote_count,
         },
         "instruments": instruments,
     }
@@ -1565,6 +2502,7 @@ def data_status_payload(central_db_path: Path) -> list[dict[str, Any]]:
         "official_daily": "官方日線",
         "official_history_backfill": "日線補齊",
         "us_intraday_15m": "美股盤中",
+        "gmail_statements": "Gmail 對帳單",
     }
     order = {key: index for index, key in enumerate(labels)}
     rows_by_job: dict[str, dict[str, Any]] = {}
@@ -1603,6 +2541,8 @@ def data_status_payload(central_db_path: Path) -> list[dict[str, Any]]:
 
 
 def default_status_source(job_name: str) -> str:
+    if job_name == "gmail_statements":
+        return "gmail"
     if job_name in {"official_daily", "official_history_backfill"}:
         return "twse_tpex"
     return "yfinance"
@@ -1619,6 +2559,8 @@ def default_next_run_at(job_name: str) -> str:
         return next_daily_run_at("14:00").isoformat(timespec="seconds")
     if job_name == "official_history_backfill":
         return next_half_hour_run_at().isoformat(timespec="seconds")
+    if job_name == "gmail_statements":
+        return next_daily_run_at("23:30").isoformat(timespec="seconds")
     return ""
 
 
@@ -1768,6 +2710,53 @@ def record_cash_deposit_from_payload(state_path: Path, payload: dict[str, Any]) 
     return result
 
 
+def record_dividend_income_from_payload(state_path: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    ticker = str(payload.get("ticker", "") or "").strip().upper()
+    if not ticker:
+        raise ValueError("請輸入股票代碼。")
+
+    amount = optional_float(payload.get("amount"))
+    if amount is None or amount == 0:
+        raise ValueError("請輸入不等於 0 的實收股利；修正時可輸入負數。")
+
+    movement_date = parse_trade_date(payload.get("date"))
+    note = str(payload.get("note", "") or "").strip() or "券商實收股利"
+    result: dict[str, Any] = {}
+
+    def mutator(state: dict[str, Any]) -> None:
+        settings = state.setdefault("settings", {})
+        movements = state.setdefault("dividend_movements", [])
+        current = sum(
+            as_float(item.get("amount"), 0) or 0
+            for item in movements
+            if isinstance(item, dict)
+        )
+        new_total = current + amount
+        settings["dividend_income_total"] = new_total
+        movements.append(
+            {
+                "id": uuid.uuid4().hex,
+                "ticker": ticker,
+                "time": movement_date,
+                "amount": amount,
+                "note": note,
+                "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            }
+        )
+        result.update(
+            {
+                "ok": True,
+                "date": movement_date,
+                "ticker": ticker,
+                "amount": amount,
+                "dividend_income_total": new_total,
+            }
+        )
+
+    update_state(state_path, mutator)
+    return result
+
+
 def record_transaction_from_payload(
     state_path: Path,
     payload: dict[str, Any],
@@ -1907,6 +2896,9 @@ def record_transaction_from_payload(
             )
             cash_delta = gross_amount - fee - tax
 
+        if central_db_path:
+            rebuild_holdings_from_transactions(state, list_corporate_actions(central_db_path))
+
         cash = as_float(settings.get("cash_available"), 0) or 0
         settings["cash_available"] = cash + cash_delta
         result.update(
@@ -1979,7 +2971,12 @@ def transaction_match_key(
     )
 
 
-def update_transaction_from_payload(state_path: Path, transaction_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+def update_transaction_from_payload(
+    state_path: Path,
+    transaction_id: str,
+    payload: dict[str, Any],
+    central_db_path: Path | None = None,
+) -> dict[str, Any]:
     transaction_id = str(transaction_id or "").strip()
     if not transaction_id:
         raise ValueError("缺少交易 id。")
@@ -2040,14 +3037,21 @@ def update_transaction_from_payload(state_path: Path, transaction_id: str, paylo
         new_delta = transaction_cash_delta(transaction)
         settings = state.setdefault("settings", {})
         settings["cash_available"] = (as_float(settings.get("cash_available"), 0) or 0) - old_delta + new_delta
-        rebuild_holdings_from_transactions(state)
+        rebuild_holdings_from_transactions(
+            state,
+            list_corporate_actions(central_db_path) if central_db_path else None,
+        )
         result.update({"ok": True, "id": transaction_id, "ticker": ticker, "cash_delta": new_delta - old_delta})
 
     update_state(state_path, mutator)
     return result
 
 
-def delete_transaction_from_payload(state_path: Path, transaction_id: str) -> dict[str, Any]:
+def delete_transaction_from_payload(
+    state_path: Path,
+    transaction_id: str,
+    central_db_path: Path | None = None,
+) -> dict[str, Any]:
     transaction_id = str(transaction_id or "").strip()
     if not transaction_id:
         raise ValueError("缺少交易 id。")
@@ -2064,7 +3068,10 @@ def delete_transaction_from_payload(state_path: Path, transaction_id: str) -> di
         delta = transaction_cash_delta(transaction)
         settings = state.setdefault("settings", {})
         settings["cash_available"] = (as_float(settings.get("cash_available"), 0) or 0) - delta
-        rebuild_holdings_from_transactions(state)
+        rebuild_holdings_from_transactions(
+            state,
+            list_corporate_actions(central_db_path) if central_db_path else None,
+        )
         result.update({"ok": True, "id": transaction_id, "ticker": transaction.get("ticker", ""), "cash_delta": -delta})
 
     update_state(state_path, mutator)

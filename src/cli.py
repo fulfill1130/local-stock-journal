@@ -7,20 +7,26 @@ from datetime import date, datetime
 from pathlib import Path
 
 from central_store import (
+    add_split_action,
     begin_update_status,
+    check_market_db,
     cleanup_market_data,
     finish_update_status,
     get_instrument,
     get_instruments_by_ticker,
     is_specific_name,
     list_ohlcv_daily,
+    list_corporate_actions,
+    migrate_market_databases,
     migrate_legacy_central_db,
     ohlcv_daily_stats,
+    rebuild_health_summary,
     set_instrument,
     upsert_etf_dividends,
     upsert_ohlcv_daily,
 )
 from dividend_fetcher import fetch_twse_etf_dividends, parse_twse_etf_dividend_tsv
+from gmail_reader import list_matching_messages, sync_latest_pdf_attachments
 from official_market import (
     fetch_tpex_daily_range,
     fetch_tpex_name,
@@ -31,6 +37,7 @@ from official_market import (
 from official_sync import sync_missing_official_daily_bars
 from server import DEFAULT_PROFILE, PROFILES, create_app, ensure_profile_files, profile_state_path
 from store import (
+    rebuild_holdings_from_transactions,
     record_buy,
     record_sell,
     remove_watch,
@@ -112,6 +119,12 @@ def build_parser() -> argparse.ArgumentParser:
     price.add_argument("--note", default="")
     add_profile_argument(price)
 
+    split = sub.add_parser("split", help="Record a stock/ETF split corporate action")
+    split.add_argument("ticker")
+    split.add_argument("--date", required=True, help="Effective date, YYYY-MM-DD")
+    split.add_argument("--ratio", required=True, help="Split ratio, for example 1:4")
+    split.add_argument("--note", default="")
+
     history_sync = sub.add_parser("history-sync", help="Sync official daily OHLCV history into segmented market databases")
     history_sync.add_argument("ticker")
     history_sync.add_argument("--source", choices=["twse", "tpex"], default="twse")
@@ -173,6 +186,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="Delete expired market data using the configured retention policy",
     )
 
+    sub.add_parser(
+        "migrate-market-db",
+        help="Migrate segmented market SQLite files to the instrument_id schema",
+    )
+
+    sub.add_parser(
+        "rebuild-health-summary",
+        help="Rebuild local market data health summaries without external API calls",
+    )
+
+    sub.add_parser(
+        "check-market-db",
+        help="Check segmented market SQLite schema and relationships",
+    )
+
+    sync_official_daily = sub.add_parser(
+        "sync-official-daily",
+        help="Alias for official-daily-sync",
+    )
+    sync_official_daily.add_argument("--end", default=date.today().isoformat())
+    sync_official_daily.add_argument(
+        "--ticker-pause",
+        type=float,
+        default=0.5,
+        help="Seconds to wait after each ticker completes. Default: 0.5",
+    )
+
     dividend_test = sub.add_parser("dividend-test", help="Fetch ETF dividend records from TWSE ETFortune")
     dividend_test.add_argument("ticker")
     dividend_test.add_argument("--start-year", type=int, default=date.today().year)
@@ -183,12 +223,66 @@ def build_parser() -> argparse.ArgumentParser:
     seed_dividends.add_argument("path", help="TSV file path")
     seed_dividends.add_argument("--source", default="manual")
 
+    gmail_check = sub.add_parser(
+        "gmail-check",
+        help="Authorize Gmail read-only access and list matching PDF emails",
+    )
+    gmail_check.add_argument(
+        "--query",
+        default='from:service@billu.tssco.com.tw has:attachment filename:pdf newer_than:14d',
+    )
+    gmail_check.add_argument("--limit", type=int, default=10)
+
+    gmail_download = sub.add_parser(
+        "gmail-download",
+        help="Download the latest broker PDF attachment into the local upload library",
+    )
+    gmail_download.add_argument(
+        "--query",
+        default=(
+            'from:service@billu.tssco.com.tw has:attachment filename:pdf '
+            'subject:"台新證券" "交割憑單" newer_than:30d'
+        ),
+    )
+    gmail_download.add_argument("--limit", type=int, default=20)
+    gmail_download.add_argument(
+        "--all-missing",
+        action="store_true",
+        help="Download every missing PDF in the query instead of only the latest statement date",
+    )
+    add_profile_argument(gmail_download)
+
     return parser
 
 
 def run_cli(project_root: Path, argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.command == "gmail-check":
+        rows = list_matching_messages(
+            project_root / "config" / "gmail_credentials.json",
+            project_root / "config" / "gmail_token.json",
+            query=args.query,
+            max_results=args.limit,
+        )
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        print(f"matched={len(rows)}")
+        return 0
+
+    if args.command == "gmail-download":
+        summary = sync_latest_pdf_attachments(
+            project_root,
+            project_root / "data" / "market_data",
+            profile_slug=args.profile,
+            credentials_path=project_root / "config" / "gmail_credentials.json",
+            token_path=project_root / "config" / "gmail_token.json",
+            query=args.query,
+            max_results=args.limit,
+            all_missing=args.all_missing,
+        )
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return 1 if summary["failed"] else 0
 
     if args.command in (None, "serve"):
         app = create_app(
@@ -206,7 +300,44 @@ def run_cli(project_root: Path, argv: list[str] | None = None) -> int:
     ensure_profile_files(project_root)
     state_path = profile_state_path(project_root, getattr(args, "profile", DEFAULT_PROFILE))
     central_db_path = project_root / "data" / "market_data"
+
+    if args.command == "migrate-market-db":
+        results = migrate_market_databases(central_db_path, backup=True)
+        for row in results:
+            copied = row.get("copied") or {}
+            print(
+                f"{row.get('database')}: needed={row.get('needed')} "
+                f"backup={row.get('backup') or 'none'} copied={copied}"
+            )
+        summaries = rebuild_health_summary(central_db_path)
+        print(f"health_summary_rebuilt={len(summaries)}")
+        return 0
+
     migrate_legacy_central_db(project_root / "data" / "central.sqlite", central_db_path)
+
+    if args.command == "rebuild-health-summary":
+        summaries = rebuild_health_summary(central_db_path)
+        counts: dict[str, int] = {}
+        for row in summaries:
+            status = str(row.get("history_status") or "unknown")
+            counts[status] = counts.get(status, 0) + 1
+        for status, count in sorted(counts.items()):
+            print(f"{status}: {count}")
+        print(f"rebuilt={len(summaries)}")
+        return 0
+
+    if args.command == "check-market-db":
+        results = check_market_db(central_db_path)
+        exit_code = 0
+        for row in results:
+            level = row.get("level", "")
+            if level == "error":
+                exit_code = 1
+            print(
+                f"[{level}] {row.get('segment')} {row.get('check')}: "
+                f"{row.get('message')} ({row.get('database')})"
+            )
+        return exit_code
 
     if args.command == "cleanup-market-data":
         results = cleanup_market_data(central_db_path)
@@ -437,7 +568,7 @@ def run_cli(project_root: Path, argv: list[str] | None = None) -> int:
         )
         return 0
 
-    if args.command == "official-daily-sync":
+    if args.command in {"official-daily-sync", "sync-official-daily"}:
         end_date = parse_iso_date(args.end)
         started_at = datetime.now().astimezone().isoformat(timespec="seconds")
         begin_update_status(
@@ -499,9 +630,8 @@ def run_cli(project_root: Path, argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "buy":
-        update_state(
-            state_path,
-            lambda state: record_buy(
+        def buy_mutator(state: dict[str, object]) -> None:
+            record_buy(
                 state,
                 ticker=args.ticker,
                 shares=args.shares,
@@ -512,15 +642,19 @@ def run_cli(project_root: Path, argv: list[str] | None = None) -> int:
                 fee=args.fee,
                 trade_date=args.date or None,
                 note=args.note,
-            ),
+            )
+            rebuild_holdings_from_transactions(state, list_corporate_actions(central_db_path))
+
+        update_state(
+            state_path,
+            buy_mutator,
         )
         print(f"Recorded BUY [{args.profile}]: {args.ticker} {args.shares:g} @ {args.price:g}, fee {args.fee:g}")
         return 0
 
     if args.command == "sell":
-        update_state(
-            state_path,
-            lambda state: record_sell(
+        def sell_mutator(state: dict[str, object]) -> None:
+            record_sell(
                 state,
                 ticker=args.ticker,
                 shares=args.shares,
@@ -529,7 +663,12 @@ def run_cli(project_root: Path, argv: list[str] | None = None) -> int:
                 tax=args.tax,
                 trade_date=args.date or None,
                 note=args.note,
-            ),
+            )
+            rebuild_holdings_from_transactions(state, list_corporate_actions(central_db_path))
+
+        update_state(
+            state_path,
+            sell_mutator,
         )
         print(
             f"Recorded SELL [{args.profile}]: {args.ticker} {args.shares:g} @ {args.price:g}, "
@@ -579,6 +718,32 @@ def run_cli(project_root: Path, argv: list[str] | None = None) -> int:
             ),
         )
         print(f"Set manual price [{args.profile}]: {symbol} close={args.close:g}")
+        return 0
+
+    if args.command == "split":
+        if ":" in args.ratio:
+            left, right = args.ratio.split(":", 1)
+        elif "/" in args.ratio:
+            left, right = args.ratio.split("/", 1)
+        else:
+            raise ValueError("--ratio must use a format like 1:4")
+        action = add_split_action(
+            central_db_path,
+            ticker=args.ticker,
+            effective_date=args.date,
+            ratio_from=float(left),
+            ratio_to=float(right),
+            note=args.note,
+            source="manual_cli",
+        )
+        actions = list_corporate_actions(central_db_path)
+        for profile_slug in PROFILES:
+            profile_path = profile_state_path(project_root, profile_slug)
+            update_state(profile_path, lambda state: rebuild_holdings_from_transactions(state, actions))
+        print(
+            f"Recorded split: {action['ticker']} {action['effective_date']} "
+            f"{action['ratio_from']:g}:{action['ratio_to']:g}"
+        )
         return 0
 
     parser.print_help()

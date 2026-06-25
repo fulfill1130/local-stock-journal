@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>股票資料庫</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20260604-history-worker-1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20260614-account-pages-1">
 </head>
 <body>
   {% set token = request.args.get('token') %}
@@ -22,9 +22,9 @@
     <nav class="database-tabs" aria-label="資料庫功能">
       <a class="database-tab active" href="{{ with_token('/database') }}">股票主檔</a>
       <a class="database-tab" href="{{ with_token('/database/dividends') }}">股利資料</a>
+      <a class="database-tab" href="{{ with_token('/database/logs') }}">作業紀錄</a>
+      <a class="database-tab" href="{{ with_token('/database/uploads') }}">上傳庫</a>
     </nav>
-
-    <section id="data-status-bar" class="data-status-bar" aria-label="資料更新狀態"></section>
 
     <section class="hero database-hero">
       <div>
@@ -50,6 +50,32 @@
           <span class="muted">先收錄目前兩個帳戶用到的股票，未來可匯入全台股票清單</span>
         </div>
       </div>
+      <form id="instrument-form" class="database-form" autocomplete="off">
+        <label>
+          <span>股票代號</span>
+          <input id="instrument-ticker" name="ticker" inputmode="latin" placeholder="例如 2330" required>
+        </label>
+        <label>
+          <span>名稱</span>
+          <input id="instrument-name" name="name" placeholder="例如 台積電">
+        </label>
+        <label>
+          <span>類型</span>
+          <select id="instrument-type" name="type">
+            <option value="STOCK">STOCK</option>
+            <option value="ETF">ETF</option>
+          </select>
+        </label>
+        <label>
+          <span>Yahoo suffix</span>
+          <select id="instrument-suffix" name="exchange_suffix">
+            <option value=".TW">.TW 上市 / ETF</option>
+            <option value=".TWO">.TWO 上櫃</option>
+          </select>
+        </label>
+        <button id="instrument-submit" class="primary-button" type="submit">加入主檔</button>
+        <p id="instrument-status" class="database-status muted"></p>
+      </form>
       <div class="database-controls">
         <input id="database-search" type="search" placeholder="搜尋代號、名稱、Yahoo 代號">
         <select id="database-suffix-filter" aria-label="suffix filter">
@@ -64,10 +90,31 @@
         </select>
       </div>
       <div id="database-list" class="database-list"></div>
+      <div id="database-pagination" class="database-pagination"></div>
     </section>
   </main>
 
-  <script src="{{ url_for('static', filename='database.js') }}?v=20260604-history-worker-1"></script>
+  <div id="split-modal" class="modal-backdrop" hidden>
+    <form id="split-form" class="modal-card split-modal-card">
+      <div class="modal-head">
+        <h2>新增分割事件</h2>
+        <button id="split-cancel" class="icon-button" type="button">取消</button>
+      </div>
+      <p id="split-target" class="muted"></p>
+      <label>
+        <span>分割生效日</span>
+        <input id="split-effective-date" type="date" required>
+      </label>
+      <label>
+        <span>分割倍率</span>
+        <input id="split-ratio" type="number" min="0.0001" step="0.0001" placeholder="例如 4" required>
+      </label>
+      <p class="muted">生效日以前買入的股數會乘上倍率，每股成本會除以倍率，總成本不變。</p>
+      <button class="primary-button" type="submit">寫入分割</button>
+    </form>
+  </div>
+
+  <script src="{{ url_for('static', filename='database.js') }}?v=20260614-flat-quote-1"></script>
 </body>
 </html>
 

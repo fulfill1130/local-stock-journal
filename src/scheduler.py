@@ -13,14 +13,15 @@ def start_interval_refresh_scheduler(
     log_path: Path,
     interval_minutes: int = 15,
     offset_minutes: int = 0,
+    name: str = "interval-price-refresh",
 ) -> None:
     interval_minutes = max(1, int(interval_minutes))
     offset_minutes = int(offset_minutes) % interval_minutes
     thread = threading.Thread(
         target=_interval_scheduler_loop,
-        args=(refresh_callback, log_path, interval_minutes, offset_minutes),
+        args=(refresh_callback, log_path, interval_minutes, offset_minutes, name),
         daemon=True,
-        name="interval-price-refresh",
+        name=name,
     )
     thread.start()
 
@@ -60,6 +61,7 @@ def _interval_scheduler_loop(
     log_path: Path,
     interval_minutes: int,
     offset_minutes: int,
+    name: str,
 ) -> None:
     ran_slots: set[str] = set()
     while True:
@@ -70,7 +72,7 @@ def _interval_scheduler_loop(
                 try:
                     refresh_callback()
                 except Exception as exc:
-                    append_refresh_log(log_path, f"schedule:{interval_minutes}m", "error", str(exc))
+                    append_refresh_log(log_path, name, "error", str(exc))
                 ran_slots.add(slot)
 
         if len(ran_slots) > 128:

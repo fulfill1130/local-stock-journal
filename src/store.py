@@ -300,8 +300,12 @@ def ensure_transaction_ids(state: dict[str, Any]) -> bool:
     return changed
 
 
-def rebuild_holdings_from_transactions(state: dict[str, Any]) -> None:
+def rebuild_holdings_from_transactions(
+    state: dict[str, Any],
+    corporate_actions: list[dict[str, Any]] | None = None,
+) -> None:
     ensure_transaction_ids(state)
+    split_actions = _split_actions_by_ticker(corporate_actions or [])
     metadata = {
         str(item.get("ticker", "")).strip().upper(): deepcopy(item)
         for item in state.get("holdings", [])
@@ -330,11 +334,17 @@ def rebuild_holdings_from_transactions(state: dict[str, Any]) -> None:
             "no_dividend": bool(meta.get("no_dividend", False)),
             "dividend_policy": meta.get("dividend_policy", ""),
             "lots": [],
+            "corporate_actions": [],
         }
         rebuilt[normalized] = holding
         return holding
 
-    for transaction in state.get("transactions", []):
+    applied_actions: dict[str, set[str]] = {}
+    ordered_transactions = sorted(
+        enumerate(state.get("transactions", [])),
+        key=lambda item: (str(item[1].get("time", ""))[:10], item[0]),
+    )
+    for _, transaction in ordered_transactions:
         ticker = str(transaction.get("ticker", "")).strip().upper()
         action = str(transaction.get("action", "")).strip().upper()
         shares = as_float(transaction.get("shares"), 0) or 0
@@ -344,6 +354,12 @@ def rebuild_holdings_from_transactions(state: dict[str, Any]) -> None:
         if not ticker or shares <= 0 or price <= 0:
             continue
         holding = holding_for(ticker)
+        _apply_due_split_actions(
+            holding,
+            split_actions.get(ticker, []),
+            applied_actions.setdefault(ticker, set()),
+            str(transaction.get("time", ""))[:10],
+        )
         if action == "BUY":
             holding.setdefault("lots", []).append(
                 {
@@ -371,6 +387,16 @@ def rebuild_holdings_from_transactions(state: dict[str, Any]) -> None:
             transaction.pop("conflict", None)
             _recalculate_holding_from_lots(holding)
 
+    today_text = now_iso()[:10]
+    for ticker, holding in rebuilt.items():
+        _apply_due_split_actions(
+            holding,
+            split_actions.get(ticker, []),
+            applied_actions.setdefault(ticker, set()),
+            today_text,
+        )
+        _recalculate_holding_from_lots(holding)
+
     state["holdings"] = [
         holding for holding in rebuilt.values()
         if (as_float(holding.get("shares"), 0) or 0) > 0
@@ -383,6 +409,85 @@ def _find_item(items: list[dict[str, Any]], ticker: str) -> dict[str, Any] | Non
         if str(item.get("ticker", "")).strip().upper() == ticker:
             return item
     return None
+
+
+def _split_actions_by_ticker(actions: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for action in actions:
+        if str(action.get("action_type", "")).strip().lower() != "split":
+            continue
+        ticker = str(action.get("ticker", "")).strip().upper()
+        effective_date = str(action.get("effective_date", "")).strip()[:10]
+        ratio_from = as_float(action.get("ratio_from"), 0) or 0
+        ratio_to = as_float(action.get("ratio_to"), 0) or 0
+        if not ticker or not effective_date or ratio_from <= 0 or ratio_to <= 0:
+            continue
+        normalized = dict(action)
+        normalized["effective_date"] = effective_date
+        normalized["ratio_from"] = ratio_from
+        normalized["ratio_to"] = ratio_to
+        normalized["ratio"] = ratio_to / ratio_from
+        grouped.setdefault(ticker, []).append(normalized)
+    for rows in grouped.values():
+        rows.sort(key=lambda row: str(row.get("effective_date", "")))
+    return grouped
+
+
+def _apply_due_split_actions(
+    holding: dict[str, Any],
+    actions: list[dict[str, Any]],
+    applied: set[str],
+    trade_date: str,
+) -> None:
+    trade_date = str(trade_date or "")[:10]
+    if not trade_date:
+        return
+    for action in actions:
+        effective_date = str(action.get("effective_date", ""))[:10]
+        action_key = f"{action.get('action_type', 'split')}:{effective_date}"
+        if not effective_date or action_key in applied or effective_date > trade_date:
+            continue
+        ratio = as_float(action.get("ratio"), 0) or 0
+        if ratio <= 0:
+            continue
+        changed = False
+        for lot in holding.setdefault("lots", []):
+            lot_date = str(lot.get("date", ""))[:10]
+            if lot_date and lot_date >= effective_date:
+                continue
+            shares = as_float(lot.get("shares"), 0) or 0
+            remaining = as_float(lot.get("remaining_shares"), 0) or 0
+            price = as_float(lot.get("price"), 0) or 0
+            cost_per_share = as_float(lot.get("cost_per_share"), 0) or 0
+            lot["shares"] = shares * ratio
+            lot["remaining_shares"] = remaining * ratio
+            if price:
+                lot["price"] = price / ratio
+            if cost_per_share:
+                lot["cost_per_share"] = cost_per_share / ratio
+            lot.setdefault("split_adjustments", []).append(
+                {
+                    "effective_date": effective_date,
+                    "ratio_from": action.get("ratio_from"),
+                    "ratio_to": action.get("ratio_to"),
+                    "ratio": ratio,
+                    "note": action.get("note", ""),
+                }
+            )
+            changed = True
+        if changed:
+            holding.setdefault("corporate_actions", []).append(
+                {
+                    "action_type": "split",
+                    "effective_date": effective_date,
+                    "ratio_from": action.get("ratio_from"),
+                    "ratio_to": action.get("ratio_to"),
+                    "ratio": ratio,
+                    "note": action.get("note", ""),
+                }
+            )
+            _recalculate_holding_from_lots(holding)
+        applied.add(action_key)
 
 
 def _consume_fifo_lots(

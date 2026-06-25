@@ -178,6 +178,8 @@ def refresh_allowed_for_symbol(symbol: str, now: datetime | None = None) -> bool
     now = now or datetime.now().astimezone()
     market = market_for_symbol(symbol)
     if market == "tw":
+        if now.weekday() >= 5:
+            return False
         return _is_time_in_window(now, *TW_MARKET_WINDOW, inclusive_end=True)
     return _is_time_in_window(now, *US_MARKET_WINDOW)
 
