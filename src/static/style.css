@@ -2620,6 +2620,13 @@ h2 {
   margin-top: 10px;
 }
 
+.kline-buy-detail {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
 .kline-ma-legend {
   display: flex;
   flex-wrap: wrap;
@@ -2698,6 +2705,19 @@ h2 {
   cursor: pointer;
 }
 
+.kline-cost-line {
+  stroke: rgba(251, 146, 60, 0.92);
+  stroke-dasharray: 6 4;
+  stroke-width: 1.6;
+}
+
+.kline-cost-label {
+  fill: rgba(251, 146, 60, 0.96);
+  font-size: 11px;
+  font-weight: 850;
+  dominant-baseline: middle;
+}
+
 .kline-ma-line {
   fill: none;
   opacity: 0.95;
@@ -2750,6 +2770,22 @@ h2 {
   stroke-width: 0;
 }
 
+.kline-buy-marker {
+  cursor: pointer;
+}
+
+.kline-buy-marker path {
+  fill: rgba(251, 146, 60, 0.78);
+  stroke: rgba(255, 237, 213, 0.95);
+  stroke-width: 1;
+}
+
+.kline-buy-marker.selected path {
+  fill: #fed7aa;
+  stroke: #ffffff;
+  stroke-width: 1.8;
+}
+
 .kline-candle.selected line,
 .kline-candle.selected rect:not(.kline-volume) {
   stroke: #e5f3ff;
@@ -2760,7 +2796,8 @@ h2 {
   .stock-detail-metrics,
   .stock-detail-metrics.compact,
   .kline-summary,
-  .kline-selected-detail {
+  .kline-selected-detail,
+  .kline-buy-detail {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

@@ -5,6 +5,7 @@ const pageState = {
   watchlist: [],
   searchResults: [],
   dividendMovements: [],
+  transactionBook: [],
   selectionItems: [],
   selectedKey: "",
   searchTerm: "",
@@ -17,7 +18,10 @@ const pageState = {
     volume: true,
     range: true,
     detail: true,
+    cost: true,
+    buys: true,
   },
+  klineBuySelections: {},
 };
 const byId = (id) => document.getElementById(id);
 let searchTimer = null;
@@ -323,6 +327,21 @@ function klineRows(cache) {
     : [];
 }
 
+function isHeldInstrument(item) {
+  return item?.instrument_state === "held";
+}
+
+function buyTransactionsForItem(item, rows) {
+  if (!isHeldInstrument(item)) return [];
+  const ticker = String(item.ticker || "").toUpperCase();
+  const visibleDates = new Set(rows.map((row) => String(row.trade_date || row.date || "").slice(0, 10)));
+  return pageState.transactionBook
+    .filter((row) => String(row.action || "").toUpperCase() === "BUY")
+    .filter((row) => String(row.ticker || "").toUpperCase() === ticker)
+    .filter((row) => visibleDates.has(String(row.date || row.time || "").slice(0, 10)))
+    .sort((a, b) => String(a.date || a.time || "").localeCompare(String(b.date || b.time || "")));
+}
+
 function movingAverageSeries(rows, period) {
   const closes = rows.map((row) => numberValue(row.close));
   let sum = 0;
@@ -355,13 +374,16 @@ function renderMovingAverageLegend(rows) {
     </div>`;
 }
 
-function renderKlineToggles() {
+function renderKlineToggles(item) {
   const toggles = [
     ["ma", "MA"],
     ["volume", "Volume"],
     ["range", "H/L"],
     ["detail", "Detail"],
   ];
+  if (isHeldInstrument(item)) {
+    toggles.push(["cost", "Cost"], ["buys", "Buys"]);
+  }
   return `
     <div class="kline-display-toggles" aria-label="K-line display toggles">
       ${toggles.map(([key, label]) => `
@@ -375,7 +397,7 @@ function renderKlineToggles() {
     </div>`;
 }
 
-function renderKlineSvg(rows, cacheKey, selectedDate, display = pageState.klineDisplay) {
+function renderKlineSvg(rows, cacheKey, selectedDate, item, display = pageState.klineDisplay) {
   const width = 720;
   const height = 260;
   const padX = 46;
@@ -390,9 +412,12 @@ function renderKlineSvg(rows, cacheKey, selectedDate, display = pageState.klineD
     { period: 20, className: "ma20", values: movingAverageSeries(rows, 20) },
     { period: 60, className: "ma60", values: movingAverageSeries(rows, 60) },
   ];
+  const avgCost = numberValue(item?.avg_cost);
+  const showCostLine = isHeldInstrument(item) && display.cost && avgCost !== null;
+  const buyTransactions = isHeldInstrument(item) && display.buys ? buyTransactionsForItem(item, rows) : [];
   const rowPrices = rows.flatMap((row) => [row.open, row.high, row.low, row.close].map(numberValue)).filter((value) => value !== null);
   const maPrices = display.ma ? maSeries.flatMap((series) => series.values).filter((value) => value !== null) : [];
-  const prices = rowPrices.concat(maPrices);
+  const prices = rowPrices.concat(maPrices).concat(showCostLine ? [avgCost] : []);
   const volumes = rows.map((row) => numberValue(row.volume) || 0);
   const rangeLow = Math.min(...rowPrices);
   const rangeHigh = Math.max(...rowPrices);
@@ -466,6 +491,28 @@ function renderKlineSvg(rows, cacheKey, selectedDate, display = pageState.klineD
     <text class="kline-range-label high" x="${width - rightPad + 5}" y="${rangeHighY.toFixed(2)}">H ${money(rangeHigh, 2)}</text>
     <text class="kline-range-label low" x="${width - rightPad + 5}" y="${rangeLowY.toFixed(2)}">L ${money(rangeLow, 2)}</text>
   ` : "";
+  const costOverlay = showCostLine ? `
+    <line class="kline-cost-line" x1="${padX}" x2="${width - rightPad}" y1="${yFor(avgCost).toFixed(2)}" y2="${yFor(avgCost).toFixed(2)}"></line>
+    <text class="kline-cost-label" x="${width - rightPad + 5}" y="${yFor(avgCost).toFixed(2)}">成本 ${money(avgCost, 2)}</text>
+  ` : "";
+  const dateToIndex = new Map(rows.map((row, index) => [String(row.trade_date || row.date || "").slice(0, 10), index]));
+  const buyMarkers = buyTransactions.map((transaction, index) => {
+    const date = String(transaction.date || transaction.time || "").slice(0, 10);
+    const rowIndex = dateToIndex.get(date);
+    if (rowIndex === undefined) return "";
+    const row = rows[rowIndex];
+    const low = numberValue(row.low);
+    const markerId = `${date}:${index}`;
+    const selected = pageState.klineBuySelections[cacheKey] === markerId;
+    const y = low === null ? priceTop + priceHeight : Math.min(priceTop + priceHeight + 10, yFor(low) + 10);
+    const x = xFor(rowIndex);
+    const title = `${date} BUY ${money(transaction.shares)} @ ${money(transaction.price, 2)} fee ${money(transaction.fee)}`;
+    return `
+      <g class="kline-buy-marker ${selected ? "selected" : ""}" data-kline-buy-key="${escapeHtml(cacheKey)}" data-kline-buy-marker="${escapeHtml(markerId)}" tabindex="0" role="button">
+        <title>${escapeHtml(title)}</title>
+        <path d="M ${x.toFixed(2)} ${(y - 5).toFixed(2)} L ${(x - 5).toFixed(2)} ${(y + 4).toFixed(2)} L ${(x + 5).toFixed(2)} ${(y + 4).toFixed(2)} Z"></path>
+      </g>`;
+  }).join("");
 
   return `
     <svg class="kline-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="local daily OHLCV K-line">
@@ -475,8 +522,10 @@ function renderKlineSvg(rows, cacheKey, selectedDate, display = pageState.klineD
       <line class="kline-grid" x1="${padX}" x2="${width - rightPad}" y1="${volumeTop + volumeHeight}" y2="${volumeTop + volumeHeight}"></line>
       ${priceLabels}
       ${rangeMarks}
+      ${costOverlay}
       ${candles}
       ${maPaths}
+      ${buyMarkers}
     </svg>`;
 }
 
@@ -501,6 +550,23 @@ function renderSelectedCandle(rows, selectedDate) {
       ${detailMetric("收盤", money(row.close, 2))}
       ${detailMetric("成交量", money(row.volume))}
       ${detailMetric("日變動", `<span class="${valueClass(change)}">${changeText}</span>`)}
+    </div>`;
+}
+
+function renderSelectedBuyMarker(item, rows, cacheKey) {
+  if (!isHeldInstrument(item) || !pageState.klineDisplay.buys) return "";
+  const markerId = pageState.klineBuySelections[cacheKey];
+  if (!markerId) return "";
+  const buys = buyTransactionsForItem(item, rows);
+  const indexText = String(markerId).split(":").pop();
+  const transaction = buys[Number(indexText)];
+  if (!transaction) return "";
+  return `
+    <div class="kline-buy-detail">
+      ${detailMetric("買進日", escapeHtml(shortDate(transaction.date || transaction.time)))}
+      ${detailMetric("股數", money(transaction.shares))}
+      ${detailMetric("價格", money(transaction.price, 2))}
+      ${detailMetric("手續費", money(transaction.fee))}
     </div>`;
 }
 
@@ -535,7 +601,8 @@ function renderKlineSection(item) {
         ${detailMetric("來源", escapeHtml(source))}
       </div>
       ${pageState.klineDisplay.ma ? renderMovingAverageLegend(rows) : ""}
-      ${renderKlineSvg(rows, cacheKey, selectedDate)}
+      ${renderKlineSvg(rows, cacheKey, selectedDate, item)}
+      ${renderSelectedBuyMarker(item, rows, cacheKey)}
       ${pageState.klineDisplay.detail ? renderSelectedCandle(rows, selectedDate) : ""}`;
   }
 
@@ -545,7 +612,7 @@ function renderKlineSection(item) {
         <h2>K-line / OHLCV</h2>
         <div class="kline-range-buttons" aria-label="K-line range">${buttons}</div>
       </div>
-      ${renderKlineToggles()}
+      ${renderKlineToggles(item)}
       ${body}
     </section>`;
 }
@@ -637,6 +704,7 @@ function renderPage(data) {
   pageState.holdings = Array.isArray(data.holdings) ? data.holdings : [];
   pageState.watchlist = Array.isArray(data.watchlist) ? data.watchlist : [];
   pageState.dividendMovements = Array.isArray(data.dividend_movements) ? data.dividend_movements : [];
+  pageState.transactionBook = Array.isArray(data.transaction_book) ? data.transaction_book : [];
   buildSelectionItems();
   byId("stock-detail-count").textContent = money(pageState.selectionItems.length);
   byId("stock-detail-updated-at").textContent = data.updated_at || "N/A";
@@ -745,11 +813,24 @@ document.addEventListener("click", (event) => {
   pageState.klineSelections[candle.dataset.klineKey] = candle.dataset.klineCandle;
   renderSelectedInstrument();
 });
+document.addEventListener("click", (event) => {
+  const marker = event.target.closest("[data-kline-buy-marker]");
+  if (!marker) return;
+  pageState.klineBuySelections[marker.dataset.klineBuyKey] = marker.dataset.klineBuyMarker;
+  renderSelectedInstrument();
+});
 document.addEventListener("keydown", (event) => {
   const candle = event.target.closest("[data-kline-candle]");
   if (!candle || !["Enter", " "].includes(event.key)) return;
   event.preventDefault();
   pageState.klineSelections[candle.dataset.klineKey] = candle.dataset.klineCandle;
+  renderSelectedInstrument();
+});
+document.addEventListener("keydown", (event) => {
+  const marker = event.target.closest("[data-kline-buy-marker]");
+  if (!marker || !["Enter", " "].includes(event.key)) return;
+  event.preventDefault();
+  pageState.klineBuySelections[marker.dataset.klineBuyKey] = marker.dataset.klineBuyMarker;
   renderSelectedInstrument();
 });
 document.addEventListener("click", (event) => {
