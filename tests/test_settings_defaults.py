@@ -61,6 +61,15 @@ class SettingsDefaultsTests(unittest.TestCase):
         self.assertEqual(settings.gmail.check_query, gmail_check_query)
         self.assertEqual(settings.gmail.download_query, gmail_download_query)
 
+    def test_demo_sample_mode_defaults_to_local_sample_market_data(self) -> None:
+        settings = load_app_settings(ROOT)
+
+        self.assertFalse(settings.demo.enabled)
+        self.assertEqual(settings.demo.quote_provider, "local_csv")
+        self.assertEqual(settings.demo.history_provider, "local_csv")
+        self.assertEqual(settings.demo.market_quote_csv, ROOT / "sample_data" / "market" / "quotes.csv")
+        self.assertEqual(settings.demo.market_history_csv, ROOT / "sample_data" / "market" / "ohlcv_daily.csv")
+
 
 if __name__ == "__main__":
     unittest.main()

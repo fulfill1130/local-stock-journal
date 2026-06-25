@@ -1,0 +1,5 @@
+instrument_id,date,open,high,low,close,volume,value,source_timestamp,freshness,source,adjusted
+SAMPLE:AAA,2026-01-13,40.00,42.00,39.50,41.00,100000,4100000,2026-01-13T16:00:00+00:00,end_of_day,synthetic_sample,false
+SAMPLE:AAA,2026-01-14,41.00,43.00,40.75,42.00,120000,5040000,2026-01-14T16:00:00+00:00,end_of_day,synthetic_sample,false
+SAMPLE:AAA,2026-01-15,42.00,43.25,41.80,42.50,110000,4675000,2026-01-15T16:00:00+00:00,end_of_day,synthetic_sample,false
+SAMPLE:BBB,2026-01-15,18.90,19.00,18.10,18.25,90000,1642500,2026-01-15T16:00:00+00:00,end_of_day,synthetic_sample,false

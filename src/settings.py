@@ -127,6 +127,15 @@ class GmailDefaults:
 
 
 @dataclass(frozen=True)
+class DemoDefaults:
+    enabled: bool
+    market_quote_csv: Path
+    market_history_csv: Path
+    quote_provider: str = "local_csv"
+    history_provider: str = "local_csv"
+
+
+@dataclass(frozen=True)
 class AppSettings:
     server: ServerDefaults
     profiles: ProfileDefaults
@@ -135,10 +144,12 @@ class AppSettings:
     providers: ProviderDefaults
     schedules: ScheduleDefaults
     gmail: GmailDefaults
+    demo: DemoDefaults
     deferred_settings_notes: tuple[str, ...] = (
         "Runtime code is not wired to this settings object yet.",
         "UI labels and localization remain in existing templates/static files.",
         "Provider behavior remains in current provider modules.",
+        "Demo/sample mode is configured here but not wired into runtime flows yet.",
     )
 
 
@@ -146,6 +157,7 @@ def load_app_settings(project_root: Path) -> AppSettings:
     root = Path(project_root)
     data_dir = root / "data"
     config_dir = root / "config"
+    sample_market_dir = root / "sample_data" / "market"
     return AppSettings(
         server=ServerDefaults(),
         profiles=ProfileDefaults(),
@@ -169,4 +181,9 @@ def load_app_settings(project_root: Path) -> AppSettings:
         providers=ProviderDefaults(),
         schedules=ScheduleDefaults(),
         gmail=GmailDefaults(),
+        demo=DemoDefaults(
+            enabled=False,
+            market_quote_csv=sample_market_dir / "quotes.csv",
+            market_history_csv=sample_market_dir / "ohlcv_daily.csv",
+        ),
     )

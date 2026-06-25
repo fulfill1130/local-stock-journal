@@ -1644,17 +1644,38 @@ def apply_daily_quote_fallbacks(
             continue
         symbol = instrument["symbol"]
         current = patched.get(symbol, {})
-        if current.get("close") is not None and ticker not in forced:
-            continue
         fallback = latest_daily_quote(path, ticker)
-        if fallback:
-            if current.get("close") is not None and ticker in forced:
-                current_date = quote_record_date(current)
-                fallback_date = quote_record_date(fallback)
-                if current_date and fallback_date and fallback_date <= current_date:
-                    continue
+        if not fallback:
+            continue
+        if current.get("close") is None:
             patched[symbol] = fallback
+            continue
+        if ticker not in forced:
+            continue
+        current_date = quote_record_date(current)
+        fallback_date = quote_record_date(fallback)
+        same_day_official = (
+            current_date
+            and fallback_date
+            and fallback_date == current_date
+            and is_official_tw_daily_quote(fallback, instrument)
+        )
+        if current_date and fallback_date and fallback_date < current_date:
+            continue
+        if current_date and fallback_date and fallback_date == current_date and not same_day_official:
+            continue
+        patched[symbol] = fallback
     return patched
+
+
+def is_official_tw_daily_quote(quote: dict[str, Any], instrument: dict[str, Any]) -> bool:
+    market = str(instrument.get("market") or "").strip().upper()
+    daily_source = str(quote.get("daily_source") or "").strip().upper()
+    return (
+        market in {"TWSE", "TPEX", "ETF"}
+        and quote.get("source") == "official_daily_fallback"
+        and daily_source in {"TWSE_STOCK_DAY", "TPEX_TRADING_STOCK"}
+    )
 
 
 def quote_record_date(quote: dict[str, Any]) -> str:
@@ -1686,6 +1707,7 @@ def latest_daily_quote(path: Path, ticker: str) -> dict[str, Any] | None:
         "fetched_at_ts": latest.get("fetched_at_ts", 0),
         "fetched_at": latest.get("trade_date", ""),
         "source": "official_daily_fallback",
+        "daily_source": latest.get("source", ""),
         "source_market": latest.get("source_market", ""),
         "status": "historical-fallback",
         "error": "quote cache missing; using latest official daily close",
