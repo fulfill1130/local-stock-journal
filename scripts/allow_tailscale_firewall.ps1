@@ -1,16 +1,23 @@
-﻿$ErrorActionPreference = "Stop"
-$displayName = "StockDailyHelper Tailscale 8787"
-$tailscaleIp = "100.70.96.67"
-$existing = Get-NetFirewallRule -DisplayName $displayName -ErrorAction SilentlyContinue
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$TailscaleIp,
+    [int]$Port = 8787,
+    [string]$DisplayName = "StockDailyHelper Tailscale"
+)
+
+$ErrorActionPreference = "Stop"
+
+$existing = Get-NetFirewallRule -DisplayName $DisplayName -ErrorAction SilentlyContinue
 if ($existing) {
-    Remove-NetFirewallRule -DisplayName $displayName
+    Remove-NetFirewallRule -DisplayName $DisplayName
 }
+
 New-NetFirewallRule `
-    -DisplayName $displayName `
+    -DisplayName $DisplayName `
     -Direction Inbound `
     -Action Allow `
     -Protocol TCP `
-    -LocalAddress $tailscaleIp `
-    -LocalPort 8787 `
+    -LocalAddress $TailscaleIp `
+    -LocalPort $Port `
     -Profile Any `
-    -Description "Allow Stock Daily Helper only on the Tailscale private IP."
+    -Description "Allow Stock Daily Helper only on the provided Tailscale private IP."

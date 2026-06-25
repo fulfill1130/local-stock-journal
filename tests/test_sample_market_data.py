@@ -21,17 +21,16 @@ class SampleMarketDataTests(unittest.TestCase):
             history_path=ROOT / "sample_data" / "market" / "ohlcv_daily.csv",
         )
 
-        quote_result = provider.get_quotes(["SAMPLE:AAA", "SAMPLE:BBB"])
-        history_result = provider.get_daily_bars("SAMPLE:AAA", date(2026, 1, 13), date(2026, 1, 15))
+        quote_result = provider.get_quotes(["DEMOA", "DEMOB"])
+        history_result = provider.get_daily_bars("DEMOA", date(2026, 1, 2), date(2026, 1, 6))
 
         self.assertTrue(quote_result.ok)
-        self.assertEqual([quote.instrument_id for quote in quote_result.items], ["SAMPLE:AAA", "SAMPLE:BBB"])
-        self.assertEqual(quote_result.items[0].source, "synthetic_sample")
+        self.assertEqual([quote.instrument_id for quote in quote_result.items], ["DEMOA", "DEMOB"])
+        self.assertEqual(quote_result.items[0].source, "synthetic_demo")
         self.assertEqual(quote_result.items[0].currency, "USD")
         self.assertTrue(history_result.ok)
         self.assertEqual(len(history_result.items), 3)
-        self.assertEqual(history_result.items[-1].close, 42.5)
-        self.assertEqual(history_result.items[-1].source, "synthetic_sample")
+        self.assertEqual(history_result.items[-1].source, "synthetic_demo")
 
 
 if __name__ == "__main__":

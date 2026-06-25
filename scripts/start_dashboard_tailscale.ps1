@@ -1,5 +1,6 @@
 param(
-    [string]$Profile = "son",
+    [string]$Profile = "default",
+    [string]$PythonPath = "python",
     [switch]$NoOpen
 )
 $ErrorActionPreference = "Stop"
@@ -55,10 +56,7 @@ if ($existing) {
     exit 0
 }
 
-$pythonCommand = Get-Command "C:\Python314\python.exe" -ErrorAction SilentlyContinue
-if (-not $pythonCommand) {
-    $pythonCommand = Get-Command python -ErrorAction Stop
-}
+$pythonCommand = Get-Command $PythonPath -ErrorAction Stop
 $arguments = @(
     "src/main.py",
     "serve",

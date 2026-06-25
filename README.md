@@ -1,28 +1,50 @@
 # stock_daily_helper
 
-A local-first stock accounting and decision-support dashboard for personal or family use.
+`stock_daily_helper` is a local-first stock journal and personal investment research dashboard.
 
-The project tracks manually entered stock transactions, portfolio cost, realized profit, dividend income, and market data. It does **not** connect to brokerage trading APIs and does **not** place orders.
+The project is built around user-owned records: transactions, lots, cost basis, dividends, notes, documents, and local market data history. Analysis views such as dashboards, K-line charts, indicators, and assistant/parser workflows are secondary tools for reviewing those records.
 
-## Features
+This project is **not investment advice**. It cannot place trades, does not connect to broker trading APIs, and is not an automated trading system.
 
-- Multi-profile portfolio dashboard.
-- Manual buy/sell transaction tracking.
-- FIFO-based cost and realized profit calculation.
-- Manual dividend income records.
-- Central instrument master for stocks and ETFs.
-- Local market data storage with health summaries.
-- Background market data refresh jobs.
-- Upload library for broker PDFs or screenshots.
-- Import staging workflow for future OCR/AI-assisted parsing.
-- Local web UI designed for desktop and mobile browsers.
+## What It Does
 
-## Quick Start
+- Tracks manually entered buy/sell transactions.
+- Rebuilds holdings, FIFO lots, cost basis, realized profit, and unrealized profit/loss.
+- Records manual dividend income separately from market dividend calendar data.
+- Maintains a local central instrument and market-data database.
+- Shows account dashboards and single-instrument detail pages.
+- Supports local K-line/OHLCV review from cached data.
+- Provides upload and import-staging surfaces for broker documents.
+- Includes provider framework foundations and synthetic sample market data.
 
-Install dependencies:
+## Safety Boundaries
+
+- No brokerage order placement.
+- No default connection to broker trading APIs.
+- No financial, investment, tax, or legal advice.
+- No public internet exposure recommended.
+- No real credentials, broker PDFs, screenshots, ledgers, SQLite databases, logs, or backups should be committed.
+
+See [Security and Privacy](docs/SECURITY_AND_PRIVACY.md) and [Disclaimer](docs/DISCLAIMER.md).
+
+## Local Data Ownership
+
+Runtime data is intended to stay on the user's machine. Local directories such as `data/`, `profiles/`, `uploads/`, `output/`, and `backups/` are ignored by Git because they may contain private holdings, documents, market caches, and logs.
+
+The public repository should contain source code, tests, docs, and synthetic examples only.
+
+## Fresh-User Setup
+
+Install Python dependencies:
 
 ```powershell
 pip install -r requirements.txt
+```
+
+Run tests:
+
+```powershell
+python -m unittest discover -s tests -v
 ```
 
 Start the local server:
@@ -31,39 +53,56 @@ Start the local server:
 python src/main.py serve
 ```
 
-Open:
+Open the local app:
 
 ```text
 http://127.0.0.1:8787/
 ```
 
-To expose the dashboard to trusted private devices, bind the server to a private network interface:
+Do not expose the app directly to the public internet. If you bind to a LAN, VPN, or Tailscale address, treat it as a private local deployment and verify your firewall rules.
+
+## Optional Providers And Credentials
+
+Market data, Gmail, broker-document import, and AI/OCR workflows are optional integrations. Users are responsible for provider credentials, provider terms, rate limits, and data redistribution rights.
+
+Credential files such as `config/gmail_credentials.json`, `config/gmail_token.json`, `.env`, and API keys must remain local and ignored. Tests and synthetic sample-data checks should not require live credentials or external API calls.
+
+## Demo And Sample Data
+
+Synthetic market CSV files are available under:
+
+- `sample_data/market/quotes.csv`
+- `sample_data/market/ohlcv_daily.csv`
+- `sample_data/profiles/demo/state.json`
+
+Generate or refresh them with:
 
 ```powershell
-python src/main.py serve --host <private-network-ip> --port 8787
+python scripts/create_demo_data.py
 ```
 
-Do not expose this application directly to the public internet.
+The generated data is deterministic and fully synthetic. It includes fake demo tickers, fake prices, fake transactions, and a fake dividend record. It is for testing and illustration only, not investment advice.
 
-## Documentation
+Demo mode is still not fully wired into the runtime app. The sample files are ready for tests and future demo loading, but the public app does not yet provide a full no-setup demo portfolio flow.
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [Data Model](docs/DATA_MODEL.md)
-- [Import Pipeline](docs/IMPORT_PIPELINE.md)
-- [Roadmap](docs/ROADMAP.md)
-- [Security and Privacy](docs/SECURITY_AND_PRIVACY.md)
-- [Disclaimer](docs/DISCLAIMER.md)
+## What Currently Works
 
-## Common Pages
+- Core local Flask app.
+- Profile ledger loading and accounting calculations.
+- Manual transaction and dividend record flows.
+- Local market database and health summaries.
+- Account overview dashboard.
+- Single-instrument detail page with local K-line chart, MA overlays, cost line, buy markers, and ex-dividend markers.
+- Provider foundation types, registry, yfinance quote adapter, and local CSV provider.
+- Unit test suite for accounting and provider foundations.
 
-Routes may vary by local configuration, but the main page groups are:
+## Experimental Or In Migration
 
-- Account dashboard: `/account/<profile>`
-- Account stock detail: `/account/<profile>/stocks`
-- Central database: `/database`
-- Dividend database: `/database/dividends`
-- Operation logs: `/database/logs`
-- Upload library: `/database/uploads`
+- Provider framework is not fully wired into runtime dashboard flows.
+- Demo/sample mode configuration exists as a foundation, but the complete demo app flow is still a TODO.
+- Gmail broker-statement ingestion is local and optional, not a generic public default.
+- OCR/AI parsing workflows should remain staged and user-reviewed before ledger writes.
+- Plugin/tool assistant architecture is still evolving.
 
 ## Common Commands
 
@@ -73,7 +112,7 @@ Server:
 python src/main.py serve
 ```
 
-Market database:
+Market database utilities:
 
 ```powershell
 python src/main.py migrate-market-db
@@ -83,7 +122,7 @@ python src/main.py sync-official-daily
 python src/main.py cleanup-market-data
 ```
 
-Gmail or email attachment import, when configured:
+Optional Gmail or email attachment import, after local credentials are configured:
 
 ```powershell
 python src/main.py gmail-check --limit 10
@@ -91,22 +130,20 @@ python src/main.py gmail-download --profile <profile>
 python src/main.py gmail-download --profile <profile> --all-missing
 ```
 
-Some command names may differ as the project evolves. Inspect `src/main.py` for the current CLI.
+Some command names may change as the migration continues. Inspect `src/main.py` for the current CLI.
 
-## Privacy Boundary
+## Documentation
 
-This repository should not include:
+- [Product Vision](docs/PRODUCT_VISION.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Data Model](docs/DATA_MODEL.md)
+- [Market Data Providers](docs/MARKET_DATA_PROVIDERS.md)
+- [Import Pipeline](docs/IMPORT_PIPELINE.md)
+- [Roadmap](docs/ROADMAP.md)
+- [Security and Privacy](docs/SECURITY_AND_PRIVACY.md)
+- [Disclaimer](docs/DISCLAIMER.md)
+- [Public Release Checklist](docs/PUBLIC_RELEASE_CHECKLIST.md)
 
-- OAuth credentials or tokens.
-- Broker statements.
-- Screenshots of private account data.
-- Local database files containing real holdings.
-- Real private network IP addresses.
-- Personal account names or broker account identifiers.
+## License
 
-See [Security and Privacy](docs/SECURITY_AND_PRIVACY.md).
-
-## Financial Disclaimer
-
-This tool is for personal record keeping and decision support only. It is not financial advice and not an automated trading system. See [Disclaimer](docs/DISCLAIMER.md).
-
+MIT. See [LICENSE](LICENSE).

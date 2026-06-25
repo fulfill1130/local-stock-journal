@@ -1,0 +1,135 @@
+{
+  "settings": {
+    "app_title": "Synthetic Demo Account",
+    "currency": "USD",
+    "cash_available": 25000,
+    "refresh_seconds": 900,
+    "scheduled_refresh_minutes": 15,
+    "tw_refresh_window": "09:01-13:01",
+    "us_refresh_window": "21:30-05:00",
+    "important_signal_limit": 6,
+    "broker_fee_rate": 0.001,
+    "transaction_tax_rate": 0.001,
+    "demo_data_notice": "Synthetic sample data only. Not investment advice."
+  },
+  "holdings": [
+    {
+      "ticker": "DEMOA",
+      "name": "Demo Core ETF",
+      "type": "ETF",
+      "exchange_suffix": ".DEMO",
+      "shares": 110.0,
+      "avg_cost": 41.86000000000001,
+      "monthly_dividend_est": 11.0,
+      "annual_dividend_est": 132.0,
+      "ex_dividend_date": "2026-03-10",
+      "payout_date": "2026-03-15",
+      "role": "demo",
+      "note": "Synthetic holding. Not based on a real account.",
+      "lots": [
+        {
+          "date": "2026-01-05",
+          "shares": 100,
+          "remaining_shares": 60.0,
+          "price": 40.0,
+          "fee": 4.0,
+          "cost_per_share": 40.04
+        },
+        {
+          "date": "2026-01-20",
+          "shares": 50,
+          "remaining_shares": 50,
+          "price": 44.0,
+          "fee": 2.2,
+          "cost_per_share": 44.044
+        }
+      ]
+    }
+  ],
+  "watchlist": [
+    {
+      "ticker": "DEMOB",
+      "name": "Demo Watch Stock",
+      "type": "STOCK",
+      "exchange_suffix": ".DEMO",
+      "target_buy_price": 21.5,
+      "alert_price": 27.0,
+      "stop_loss_price": null,
+      "target_sell_price": null,
+      "reason": "Synthetic watchlist item for demo.",
+      "note": "No account position."
+    }
+  ],
+  "transactions": [
+    {
+      "time": "2026-01-05",
+      "action": "BUY",
+      "ticker": "DEMOA",
+      "shares": 100,
+      "price": 40.0,
+      "gross_amount": 4000.0,
+      "fee": 4.0,
+      "tax": 0.0,
+      "amount": 4004.0,
+      "realized_pnl": null,
+      "lots": [],
+      "note": "Synthetic first buy.",
+      "id": "tx_ec7b0524e42bed6c"
+    },
+    {
+      "time": "2026-01-20",
+      "action": "BUY",
+      "ticker": "DEMOA",
+      "shares": 50,
+      "price": 44.0,
+      "gross_amount": 2200.0,
+      "fee": 2.2,
+      "tax": 0.0,
+      "amount": 2202.2,
+      "realized_pnl": null,
+      "lots": [],
+      "note": "Synthetic second buy.",
+      "id": "tx_0f6d31dc24a9ca07"
+    },
+    {
+      "time": "2026-02-10",
+      "action": "SELL",
+      "ticker": "DEMOA",
+      "shares": 40,
+      "price": 48.0,
+      "gross_amount": 1920.0,
+      "fee": 1.92,
+      "tax": 1.92,
+      "amount": 1916.1599999999999,
+      "realized_pnl": 314.55999999999995,
+      "lots": [
+        {
+          "date": "2026-01-05",
+          "shares": 40,
+          "cost_per_share": 40.04
+        }
+      ],
+      "note": "Synthetic partial sell to demonstrate FIFO realized profit.",
+      "id": "tx_cb6a67b9db5e0c9d"
+    }
+  ],
+  "cash_movements": [
+    {
+      "time": "2026-01-02",
+      "action": "CASH_IN",
+      "amount": 25000,
+      "note": "Synthetic opening cash for demo account."
+    }
+  ],
+  "dividend_movements": [
+    {
+      "id": "demo_dividend_20260315_demoa",
+      "ticker": "DEMOA",
+      "time": "2026-03-15",
+      "amount": 33.0,
+      "note": "Synthetic received dividend for demo only.",
+      "created_at": "2026-03-15T09:00:00+00:00"
+    }
+  ],
+  "price_overrides": {}
+}
