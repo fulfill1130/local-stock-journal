@@ -64,6 +64,30 @@ function percent(value) {
   return `${result >= 0 ? "+" : ""}${money(result, 2)}%`;
 }
 
+function friendlySourceLabel(value) {
+  const raw = String(value || "").trim();
+  if (!raw || raw === "N/A") return "N/A";
+  if (raw.includes(" / ")) {
+    return raw.split(" / ").map(friendlySourceLabel).join(" / ");
+  }
+  const labels = {
+    TWSE_STOCK_DAY: "TWSE 官方日線",
+    TPEX_TRADING_STOCK: "TPEX 官方日線",
+    TWSE: "TWSE 官方資料",
+    TPEX: "TPEX 官方資料",
+    YAHOO: "Yahoo 資料",
+  };
+  const lowerLabels = {
+    official_daily_fallback: "官方日線收盤",
+    yfinance: "Yahoo Finance 報價",
+    yahoo_historical: "Yahoo 歷史股利",
+    twse_etfortune: "TWSE ETF 配息資料",
+    local_csv: "本地 CSV",
+  };
+  const label = labels[raw.toUpperCase()] || lowerLabels[raw.toLowerCase()];
+  return label ? `${label}（${raw}）` : raw;
+}
+
 function valueClass(value) {
   const result = numberValue(value);
   if (result === null || result === 0) return "flat";
@@ -320,6 +344,7 @@ function renderWatchNotes(item) {
 
 function renderDataHealth(item) {
   const quoteDate = item.quote?.price_time || item.price_time || item.after_close_quote?.trade_date || "";
+  const source = item.quote?.source || item.quote_source || item.source || "";
   return `
     <section class="stock-detail-section">
       <div class="section-title"><h2>資料來源</h2></div>
@@ -327,7 +352,7 @@ function renderDataHealth(item) {
         ${detailMetric("狀態", escapeHtml(stateLabel(item.instrument_state)))}
         ${detailMetric("代號", escapeHtml(item.symbol || item.yahoo_symbol || ""))}
         ${detailMetric("時間", escapeHtml(shortDate(quoteDate)))}
-        ${detailMetric("來源", escapeHtml(item.quote?.source || item.quote_source || item.source || ""))}
+        ${detailMetric("來源", escapeHtml(friendlySourceLabel(source)))}
         ${detailMetric("日線筆數", money(item.daily_bar_count, 0))}
         ${detailMetric("最近日線", escapeHtml(shortDate(item.daily_last_date)))}
       </div>
@@ -433,25 +458,26 @@ function movingAverageText(rows, period) {
 function renderMovingAverageLegend(rows) {
   return `
     <div class="kline-ma-legend">
-      <span class="ma5">MA5 ${movingAverageText(rows, 5)}</span>
-      <span class="ma20">MA20 ${movingAverageText(rows, 20)}</span>
-      <span class="ma60">MA60 ${movingAverageText(rows, 60)}</span>
-    </div>`;
+      <span class="ma5">MA5（5日均線） ${movingAverageText(rows, 5)}</span>
+      <span class="ma20">MA20（20日均線） ${movingAverageText(rows, 20)}</span>
+      <span class="ma60">MA60（60日均線） ${movingAverageText(rows, 60)}</span>
+    </div>
+    <p class="kline-ma-note">MA = 移動平均線，用來看短中期趨勢。</p>`;
 }
 
 function renderKlineToggles(item) {
   const toggles = [
-    ["ma", "MA"],
-    ["volume", "Volume"],
-    ["range", "H/L"],
-    ["detail", "Detail"],
-    ["dividends", "Div"],
+    ["ma", "MA（均線）"],
+    ["volume", "成交量"],
+    ["range", "高低點"],
+    ["detail", "明細"],
+    ["dividends", "除息"],
   ];
   if (isHeldInstrument(item)) {
-    toggles.push(["cost", "Cost"], ["buys", "Buys"]);
+    toggles.push(["cost", "成本線"], ["buys", "買進點"]);
   }
   return `
-    <div class="kline-display-toggles" aria-label="K-line display toggles">
+    <div class="kline-display-toggles" aria-label="K-line 顯示切換">
       ${toggles.map(([key, label]) => `
         <button
           class="kline-toggle-button ${pageState.klineDisplay[key] ? "active" : ""}"
@@ -572,7 +598,7 @@ function renderKlineSvg(rows, cacheKey, selectedDate, item, dividendEvents, disp
     const selected = pageState.klineBuySelections[cacheKey] === markerId;
     const y = low === null ? priceTop + priceHeight : Math.min(priceTop + priceHeight + 10, yFor(low) + 10);
     const x = xFor(rowIndex);
-    const title = `${date} BUY ${money(transaction.shares)} @ ${money(transaction.price, 2)} fee ${money(transaction.fee)}`;
+    const title = `${date} 買進 ${money(transaction.shares)} 股，價格 ${money(transaction.price, 2)}，手續費 ${money(transaction.fee)}`;
     return `
       <g class="kline-buy-marker ${selected ? "selected" : ""}" data-kline-buy-key="${escapeHtml(cacheKey)}" data-kline-buy-marker="${escapeHtml(markerId)}" tabindex="0" role="button">
         <title>${escapeHtml(title)}</title>
@@ -588,7 +614,7 @@ function renderKlineSvg(rows, cacheKey, selectedDate, item, dividendEvents, disp
     const x = xFor(rowIndex);
     const y = high === null ? priceTop + 10 : Math.max(priceTop + 10, yFor(high) - 14);
     const selected = pageState.klineDividendSelections[cacheKey] === event.marker_id;
-    const title = `${exDate} DIV ${money(event.dividend, 3)} payout ${shortDate(event.payout_date)} source ${event.combined_source || event.source || ""}`;
+    const title = `${exDate} 除息，每單位配息 ${money(event.dividend, 3)}，發放日 ${shortDate(event.payout_date)}，來源 ${friendlySourceLabel(event.combined_source || event.source || "")}`;
     return `
       <g class="kline-dividend-marker ${selected ? "selected" : ""}" data-kline-dividend-key="${escapeHtml(cacheKey)}" data-kline-dividend-marker="${escapeHtml(event.marker_id)}" tabindex="0" role="button">
         <title>${escapeHtml(title)}</title>
@@ -647,7 +673,7 @@ function renderSelectedBuyMarker(item, rows, cacheKey) {
   if (!transaction) return "";
   return `
     <div class="kline-buy-detail">
-      ${detailMetric("買進日", escapeHtml(shortDate(transaction.date || transaction.time)))}
+      ${detailMetric("買進日期", escapeHtml(shortDate(transaction.date || transaction.time)))}
       ${detailMetric("股數", money(transaction.shares))}
       ${detailMetric("價格", money(transaction.price, 2))}
       ${detailMetric("手續費", money(transaction.fee))}
@@ -665,7 +691,7 @@ function renderSelectedDividendMarker(item, rows, cacheKey) {
       ${detailMetric("除息日", escapeHtml(shortDate(event.ex_dividend_date)))}
       ${detailMetric("每單位配息", money(event.dividend, 3))}
       ${detailMetric("發放日", escapeHtml(shortDate(event.payout_date)))}
-      ${detailMetric("來源", escapeHtml(event.combined_source || event.source || "N/A"))}
+      ${detailMetric("來源", escapeHtml(friendlySourceLabel(event.combined_source || event.source || "N/A")))}
     </div>`;
 }
 
@@ -698,7 +724,7 @@ function renderKlineSection(item) {
         ${detailMetric("最新收盤", money(latest.close, 2))}
         ${detailMetric("日期範圍", `${escapeHtml(shortDate(first.trade_date || first.date))} - ${escapeHtml(shortDate(latest.trade_date || latest.date))}`)}
         ${detailMetric("筆數", money(rows.length))}
-        ${detailMetric("來源", escapeHtml(source))}
+        ${detailMetric("來源", escapeHtml(friendlySourceLabel(source)))}
       </div>
       ${pageState.klineDisplay.ma ? renderMovingAverageLegend(rows) : ""}
       ${renderKlineSvg(rows, cacheKey, selectedDate, item, dividendEvents)}
