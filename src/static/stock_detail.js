@@ -9,6 +9,15 @@ const pageState = {
   selectedKey: "",
   searchTerm: "",
   searchStatus: "idle",
+  klineRangeDays: 180,
+  klineCache: {},
+  klineSelections: {},
+  klineDisplay: {
+    ma: true,
+    volume: true,
+    range: true,
+    detail: true,
+  },
 };
 const byId = (id) => document.getElementById(id);
 let searchTimer = null;
@@ -56,6 +65,17 @@ function valueClass(value) {
 
 function shortDate(value) {
   return value ? String(value).replaceAll("-", "/") : "N/A";
+}
+
+function isoDate(date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function dateDaysAgo(days) {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return isoDate(date);
 }
 
 function compact(value) {
@@ -291,6 +311,245 @@ function renderDataHealth(item) {
     </section>`;
 }
 
+function klineCacheKey(item) {
+  return `${String(item?.ticker || "").toUpperCase()}:${pageState.klineRangeDays}`;
+}
+
+function klineRows(cache) {
+  return Array.isArray(cache?.rows)
+    ? cache.rows
+        .filter((row) => ["open", "high", "low", "close"].every((key) => numberValue(row[key]) !== null))
+        .sort((a, b) => String(a.trade_date || a.date || "").localeCompare(String(b.trade_date || b.date || "")))
+    : [];
+}
+
+function movingAverageSeries(rows, period) {
+  const closes = rows.map((row) => numberValue(row.close));
+  let sum = 0;
+  return closes.map((close, index) => {
+    if (close === null) return null;
+    sum += close;
+    if (index >= period) {
+      sum -= closes[index - period] || 0;
+    }
+    return index >= period - 1 ? sum / period : null;
+  });
+}
+
+function latestMovingAverage(rows, period) {
+  const series = movingAverageSeries(rows, period).filter((value) => value !== null);
+  return series.length ? series[series.length - 1] : null;
+}
+
+function movingAverageText(rows, period) {
+  const value = latestMovingAverage(rows, period);
+  return value === null ? "--" : money(value, 2);
+}
+
+function renderMovingAverageLegend(rows) {
+  return `
+    <div class="kline-ma-legend">
+      <span class="ma5">MA5 ${movingAverageText(rows, 5)}</span>
+      <span class="ma20">MA20 ${movingAverageText(rows, 20)}</span>
+      <span class="ma60">MA60 ${movingAverageText(rows, 60)}</span>
+    </div>`;
+}
+
+function renderKlineToggles() {
+  const toggles = [
+    ["ma", "MA"],
+    ["volume", "Volume"],
+    ["range", "H/L"],
+    ["detail", "Detail"],
+  ];
+  return `
+    <div class="kline-display-toggles" aria-label="K-line display toggles">
+      ${toggles.map(([key, label]) => `
+        <button
+          class="kline-toggle-button ${pageState.klineDisplay[key] ? "active" : ""}"
+          type="button"
+          data-kline-toggle="${key}"
+          aria-pressed="${pageState.klineDisplay[key] ? "true" : "false"}"
+        >${label}</button>
+      `).join("")}
+    </div>`;
+}
+
+function renderKlineSvg(rows, cacheKey, selectedDate, display = pageState.klineDisplay) {
+  const width = 720;
+  const height = 260;
+  const padX = 46;
+  const rightPad = 56;
+  const priceTop = 16;
+  const priceHeight = 156;
+  const volumeTop = 196;
+  const volumeHeight = 44;
+  const innerWidth = width - padX - rightPad;
+  const maSeries = [
+    { period: 5, className: "ma5", values: movingAverageSeries(rows, 5) },
+    { period: 20, className: "ma20", values: movingAverageSeries(rows, 20) },
+    { period: 60, className: "ma60", values: movingAverageSeries(rows, 60) },
+  ];
+  const rowPrices = rows.flatMap((row) => [row.open, row.high, row.low, row.close].map(numberValue)).filter((value) => value !== null);
+  const maPrices = display.ma ? maSeries.flatMap((series) => series.values).filter((value) => value !== null) : [];
+  const prices = rowPrices.concat(maPrices);
+  const volumes = rows.map((row) => numberValue(row.volume) || 0);
+  const rangeLow = Math.min(...rowPrices);
+  const rangeHigh = Math.max(...rowPrices);
+  let min = rangeLow;
+  let max = rangeHigh;
+  if (min === max) {
+    min -= 1;
+    max += 1;
+  }
+  const padding = (max - min) * 0.08;
+  min -= padding;
+  max += padding;
+  const maxVolume = Math.max(...volumes, 1);
+  const slot = innerWidth / rows.length;
+  const candleWidth = Math.max(2, Math.min(10, slot * 0.55));
+  const yFor = (value) => priceTop + ((max - value) / (max - min)) * priceHeight;
+  const xFor = (index) => padX + slot * index + slot / 2;
+  const priceTicks = [max, (max + min) / 2, min].map((value) => ({
+    value,
+    y: yFor(value),
+  }));
+  const rangeHighY = yFor(rangeHigh);
+  const rangeLowY = yFor(rangeLow);
+  const priceLabels = priceTicks.map((tick) => `
+    <text class="kline-price-label" x="8" y="${tick.y.toFixed(2)}">${money(tick.value, 2)}</text>
+  `).join("");
+
+  const maPaths = display.ma
+    ? maSeries.map((series) => {
+      let started = false;
+      const path = series.values.map((value, index) => {
+        if (value === null) return "";
+        const command = started ? "L" : "M";
+        started = true;
+        return `${command}${xFor(index).toFixed(2)},${yFor(value).toFixed(2)}`;
+      }).filter(Boolean).join(" ");
+      if (!path) return "";
+      return `<path class="kline-ma-line ${series.className}" d="${path}"></path>`;
+    }).join("")
+    : "";
+
+  const candles = rows.map((row, index) => {
+    const open = numberValue(row.open);
+    const high = numberValue(row.high);
+    const low = numberValue(row.low);
+    const close = numberValue(row.close);
+    const volume = numberValue(row.volume) || 0;
+    const x = xFor(index);
+    const trend = close > open ? "up" : close < open ? "down" : "flat";
+    const bodyY = Math.min(yFor(open), yFor(close));
+    const bodyHeight = Math.max(1, Math.abs(yFor(open) - yFor(close)));
+    const volumeHeightValue = Math.max(1, (volume / maxVolume) * volumeHeight);
+    const date = row.trade_date || row.date || "";
+    const title = `${date} O ${money(open, 2)} H ${money(high, 2)} L ${money(low, 2)} C ${money(close, 2)} V ${money(volume)}`;
+    const selected = String(date) === String(selectedDate);
+    const volumeBar = display.volume
+      ? `<rect class="kline-volume" x="${(x - candleWidth / 2).toFixed(2)}" y="${(volumeTop + volumeHeight - volumeHeightValue).toFixed(2)}" width="${candleWidth.toFixed(2)}" height="${volumeHeightValue.toFixed(2)}"></rect>`
+      : "";
+    return `
+      <g class="kline-candle ${trend} ${selected ? "selected" : ""}" data-kline-key="${escapeHtml(cacheKey)}" data-kline-candle="${escapeHtml(date)}" tabindex="0" role="button">
+        <title>${escapeHtml(title)}</title>
+        <line x1="${x.toFixed(2)}" x2="${x.toFixed(2)}" y1="${yFor(high).toFixed(2)}" y2="${yFor(low).toFixed(2)}"></line>
+        <rect x="${(x - candleWidth / 2).toFixed(2)}" y="${bodyY.toFixed(2)}" width="${candleWidth.toFixed(2)}" height="${bodyHeight.toFixed(2)}"></rect>
+        ${volumeBar}
+      </g>`;
+  }).join("");
+
+  const rangeMarks = display.range ? `
+    <line class="kline-range-line high" x1="${padX}" x2="${width - rightPad}" y1="${rangeHighY.toFixed(2)}" y2="${rangeHighY.toFixed(2)}"></line>
+    <line class="kline-range-line low" x1="${padX}" x2="${width - rightPad}" y1="${rangeLowY.toFixed(2)}" y2="${rangeLowY.toFixed(2)}"></line>
+    <text class="kline-range-label high" x="${width - rightPad + 5}" y="${rangeHighY.toFixed(2)}">H ${money(rangeHigh, 2)}</text>
+    <text class="kline-range-label low" x="${width - rightPad + 5}" y="${rangeLowY.toFixed(2)}">L ${money(rangeLow, 2)}</text>
+  ` : "";
+
+  return `
+    <svg class="kline-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="local daily OHLCV K-line">
+      <line class="kline-grid" x1="${padX}" x2="${width - rightPad}" y1="${priceTop}" y2="${priceTop}"></line>
+      <line class="kline-grid" x1="${padX}" x2="${width - rightPad}" y1="${(priceTop + priceHeight / 2).toFixed(2)}" y2="${(priceTop + priceHeight / 2).toFixed(2)}"></line>
+      <line class="kline-grid" x1="${padX}" x2="${width - rightPad}" y1="${priceTop + priceHeight}" y2="${priceTop + priceHeight}"></line>
+      <line class="kline-grid" x1="${padX}" x2="${width - rightPad}" y1="${volumeTop + volumeHeight}" y2="${volumeTop + volumeHeight}"></line>
+      ${priceLabels}
+      ${rangeMarks}
+      ${candles}
+      ${maPaths}
+    </svg>`;
+}
+
+function renderSelectedCandle(rows, selectedDate) {
+  const index = rows.findIndex((row) => String(row.trade_date || row.date || "") === String(selectedDate));
+  const row = rows[index >= 0 ? index : rows.length - 1];
+  if (!row) return "";
+  const previous = rows[index > 0 ? index - 1 : rows.length - 2] || null;
+  const close = numberValue(row.close);
+  const previousClose = numberValue(previous?.close);
+  const change = close !== null && previousClose !== null ? close - previousClose : null;
+  const changePct = change !== null && previousClose ? (change / previousClose) * 100 : null;
+  const changeText = change === null
+    ? "N/A"
+    : `${change >= 0 ? "+" : ""}${money(change, 2)}${changePct === null ? "" : ` / ${percent(changePct)}`}`;
+  return `
+    <div class="kline-selected-detail">
+      ${detailMetric("日期", escapeHtml(shortDate(row.trade_date || row.date)))}
+      ${detailMetric("開盤", money(row.open, 2))}
+      ${detailMetric("最高", money(row.high, 2))}
+      ${detailMetric("最低", money(row.low, 2))}
+      ${detailMetric("收盤", money(row.close, 2))}
+      ${detailMetric("成交量", money(row.volume))}
+      ${detailMetric("日變動", `<span class="${valueClass(change)}">${changeText}</span>`)}
+    </div>`;
+}
+
+function renderKlineSection(item) {
+  const cacheKey = klineCacheKey(item);
+  const cache = pageState.klineCache[cacheKey] || { status: "idle" };
+  const rows = klineRows(cache);
+  const ranges = [
+    [90, "3M"],
+    [180, "6M"],
+    [365, "1Y"],
+  ];
+  const buttons = ranges.map(([days, label]) => `
+    <button class="kline-range-button ${pageState.klineRangeDays === days ? "active" : ""}" type="button" data-kline-range="${days}">${label}</button>
+  `).join("");
+
+  let body = `<div class="empty">正在讀取本地日線...</div>`;
+  if (cache.status === "error") {
+    body = `<div class="empty">讀取本地日線失敗：${escapeHtml(cache.error || "")}</div>`;
+  } else if (cache.status === "loaded" && rows.length < 2) {
+    body = `<div class="empty">本地日線資料不足，請先到資料庫頁更新或檢查此標的。</div>`;
+  } else if (rows.length >= 2) {
+    const first = rows[0];
+    const latest = rows[rows.length - 1];
+    const selectedDate = pageState.klineSelections[cacheKey] || latest.trade_date || latest.date || "";
+    const source = latest.source || first.source || latest.source_market || first.source_market || "N/A";
+    body = `
+      <div class="kline-summary">
+        ${detailMetric("最新收盤", money(latest.close, 2))}
+        ${detailMetric("日期範圍", `${escapeHtml(shortDate(first.trade_date || first.date))} - ${escapeHtml(shortDate(latest.trade_date || latest.date))}`)}
+        ${detailMetric("筆數", money(rows.length))}
+        ${detailMetric("來源", escapeHtml(source))}
+      </div>
+      ${pageState.klineDisplay.ma ? renderMovingAverageLegend(rows) : ""}
+      ${renderKlineSvg(rows, cacheKey, selectedDate)}
+      ${pageState.klineDisplay.detail ? renderSelectedCandle(rows, selectedDate) : ""}`;
+  }
+
+  return `
+    <section class="stock-detail-section stock-detail-kline">
+      <div class="section-title stock-detail-section-title">
+        <h2>K-line / OHLCV</h2>
+        <div class="kline-range-buttons" aria-label="K-line range">${buttons}</div>
+      </div>
+      ${renderKlineToggles()}
+      ${body}
+    </section>`;
+}
+
 function renderSelectedInstrument() {
   const root = byId("stock-detail-view");
   const item = selectedItem();
@@ -324,6 +583,7 @@ function renderSelectedInstrument() {
       ${renderWatchNotes(item)}
       ${renderDividendSchedule(item)}
       ${renderActualDividends(item)}
+      ${renderKlineSection(item)}
 
       ${item.instrument_state === "held" ? `
         <section class="stock-detail-section">
@@ -382,6 +642,7 @@ function renderPage(data) {
   byId("stock-detail-updated-at").textContent = data.updated_at || "N/A";
   renderSelector();
   renderSelectedInstrument();
+  loadKlineForSelected();
 }
 
 async function searchLocalInstruments(term) {
@@ -392,6 +653,7 @@ async function searchLocalInstruments(term) {
     buildSelectionItems();
     renderSelector();
     renderSelectedInstrument();
+    loadKlineForSelected();
     return;
   }
 
@@ -404,6 +666,40 @@ async function searchLocalInstruments(term) {
   buildSelectionItems();
   renderSelector();
   renderSelectedInstrument();
+  loadKlineForSelected();
+}
+
+async function loadKlineForSelected() {
+  const item = selectedItem();
+  if (!item?.ticker) return;
+  const key = klineCacheKey(item);
+  const cached = pageState.klineCache[key];
+  if (cached?.status === "loading" || cached?.status === "loaded") return;
+  pageState.klineCache[key] = { status: "loading", rows: [] };
+  renderSelectedInstrument();
+  const end = isoDate(new Date());
+  const start = dateDaysAgo(pageState.klineRangeDays);
+  const params = new URLSearchParams({ start, end });
+  try {
+    const response = await fetch(withToken(`/api/database/${encodeURIComponent(item.ticker)}/history?${params.toString()}`));
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    pageState.klineCache[key] = {
+      status: "loaded",
+      rows: Array.isArray(data.rows) ? data.rows : [],
+      summary: data.summary || {},
+      updated_at: data.updated_at || "",
+    };
+  } catch (error) {
+    pageState.klineCache[key] = {
+      status: "error",
+      rows: [],
+      error: error.message || String(error),
+    };
+  }
+  if (klineCacheKey(selectedItem()) === key) {
+    renderSelectedInstrument();
+  }
 }
 
 async function loadPage(force = false) {
@@ -430,6 +726,7 @@ byId("stock-detail-search").addEventListener("input", (event) => {
   buildSelectionItems();
   renderSelector();
   renderSelectedInstrument();
+  loadKlineForSelected();
   searchTimer = window.setTimeout(() => {
     searchLocalInstruments(pageState.searchTerm).catch((error) => {
       byId("stock-detail-view").innerHTML = `<div class="panel empty">搜尋失敗：${escapeHtml(error.message || error)}</div>`;
@@ -439,6 +736,37 @@ byId("stock-detail-search").addEventListener("input", (event) => {
 
 byId("stock-detail-select").addEventListener("change", (event) => {
   pageState.selectedKey = event.target.value;
+  renderSelectedInstrument();
+  loadKlineForSelected();
+});
+document.addEventListener("click", (event) => {
+  const candle = event.target.closest("[data-kline-candle]");
+  if (!candle) return;
+  pageState.klineSelections[candle.dataset.klineKey] = candle.dataset.klineCandle;
+  renderSelectedInstrument();
+});
+document.addEventListener("keydown", (event) => {
+  const candle = event.target.closest("[data-kline-candle]");
+  if (!candle || !["Enter", " "].includes(event.key)) return;
+  event.preventDefault();
+  pageState.klineSelections[candle.dataset.klineKey] = candle.dataset.klineCandle;
+  renderSelectedInstrument();
+});
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-kline-range]");
+  if (!button) return;
+  const days = Number(button.dataset.klineRange);
+  if (![90, 180, 365].includes(days)) return;
+  pageState.klineRangeDays = days;
+  renderSelectedInstrument();
+  loadKlineForSelected();
+});
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-kline-toggle]");
+  if (!button) return;
+  const key = button.dataset.klineToggle;
+  if (!Object.prototype.hasOwnProperty.call(pageState.klineDisplay, key)) return;
+  pageState.klineDisplay[key] = !pageState.klineDisplay[key];
   renderSelectedInstrument();
 });
 byId("stock-detail-refresh").addEventListener("click", () => loadPage(true));
