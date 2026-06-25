@@ -39,6 +39,10 @@
 
     <section class="panel stock-detail-picker-panel">
       <label class="stock-detail-picker">
+        <span>搜尋代號 / 名稱</span>
+        <input id="stock-detail-search" type="search" placeholder="輸入股票代號、中文或英文名稱" autocomplete="off">
+      </label>
+      <label class="stock-detail-picker">
         <span>選擇股票</span>
         <select id="stock-detail-select" aria-label="選擇持股"></select>
       </label>
@@ -52,6 +56,6 @@
   <script>
     window.DASHBOARD_PROFILE = {{ profile | tojson }};
   </script>
-  <script src="{{ url_for('static', filename='stock_detail.js') }}?v=20260614-account-pages-1"></script>
+  <script src="{{ url_for('static', filename='stock_detail.js') }}?v=20260625-search-empty-1"></script>
 </body>
 </html>
