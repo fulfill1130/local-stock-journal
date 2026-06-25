@@ -12,6 +12,7 @@ const pageState = {
   searchStatus: "idle",
   klineRangeDays: 180,
   klineCache: {},
+  dividendCalendarCache: {},
   klineSelections: {},
   klineDisplay: {
     ma: true,
@@ -20,8 +21,10 @@ const pageState = {
     detail: true,
     cost: true,
     buys: true,
+    dividends: true,
   },
   klineBuySelections: {},
+  klineDividendSelections: {},
 };
 const byId = (id) => document.getElementById(id);
 let searchTimer = null;
@@ -80,6 +83,22 @@ function dateDaysAgo(days) {
   const date = new Date();
   date.setDate(date.getDate() - days);
   return isoDate(date);
+}
+
+function yearFromDate(value) {
+  const match = String(value || "").match(/^(\d{4})/);
+  return match ? Number(match[1]) : new Date().getFullYear();
+}
+
+function klineDateRange() {
+  const start = dateDaysAgo(pageState.klineRangeDays);
+  const end = isoDate(new Date());
+  return {
+    start,
+    end,
+    startYear: yearFromDate(start),
+    endYear: yearFromDate(end),
+  };
 }
 
 function compact(value) {
@@ -319,6 +338,12 @@ function klineCacheKey(item) {
   return `${String(item?.ticker || "").toUpperCase()}:${pageState.klineRangeDays}`;
 }
 
+function dividendCalendarCacheKey(item) {
+  const ticker = String(item?.ticker || "").toUpperCase();
+  const range = klineDateRange();
+  return `${ticker}:${range.startYear}:${range.endYear}`;
+}
+
 function klineRows(cache) {
   return Array.isArray(cache?.rows)
     ? cache.rows
@@ -340,6 +365,46 @@ function buyTransactionsForItem(item, rows) {
     .filter((row) => String(row.ticker || "").toUpperCase() === ticker)
     .filter((row) => visibleDates.has(String(row.date || row.time || "").slice(0, 10)))
     .sort((a, b) => String(a.date || a.time || "").localeCompare(String(b.date || b.time || "")));
+}
+
+function dividendSourceRank(row) {
+  const source = String(row?.source || "").toLowerCase();
+  if (source.includes("twse_etfortune")) return 3;
+  if (source.includes("twse")) return 2;
+  if (source.includes("yahoo")) return 1;
+  return 0;
+}
+
+function dedupedDividendEvents(item, rows) {
+  if (!pageState.klineDisplay.dividends) return [];
+  const cache = pageState.dividendCalendarCache[dividendCalendarCacheKey(item)] || {};
+  const records = Array.isArray(cache.rows) ? cache.rows : [];
+  if (!records.length) return [];
+  const ticker = String(item?.ticker || "").toUpperCase();
+  const visibleDates = new Set(rows.map((row) => String(row.trade_date || row.date || "").slice(0, 10)));
+  const byDate = new Map();
+  records.forEach((row) => {
+    const rowTicker = String(row.ticker || ticker).toUpperCase();
+    const exDate = String(row.ex_dividend_date || "").slice(0, 10);
+    if (!exDate || rowTicker !== ticker || !visibleDates.has(exDate)) return;
+    const key = `${rowTicker}:${exDate}`;
+    const source = String(row.source || "").trim();
+    const existing = byDate.get(key);
+    const sources = new Set(existing?._sources || []);
+    if (source) sources.add(source);
+    if (!existing || dividendSourceRank(row) > dividendSourceRank(existing)) {
+      byDate.set(key, { ...row, _sources: sources });
+    } else {
+      existing._sources = sources;
+    }
+  });
+  return Array.from(byDate.values())
+    .map((row) => ({
+      ...row,
+      marker_id: String(row.ex_dividend_date || "").slice(0, 10),
+      combined_source: Array.from(row._sources || []).filter(Boolean).join(" / ") || row.source || "",
+    }))
+    .sort((a, b) => String(a.ex_dividend_date || "").localeCompare(String(b.ex_dividend_date || "")));
 }
 
 function movingAverageSeries(rows, period) {
@@ -380,6 +445,7 @@ function renderKlineToggles(item) {
     ["volume", "Volume"],
     ["range", "H/L"],
     ["detail", "Detail"],
+    ["dividends", "Div"],
   ];
   if (isHeldInstrument(item)) {
     toggles.push(["cost", "Cost"], ["buys", "Buys"]);
@@ -397,7 +463,7 @@ function renderKlineToggles(item) {
     </div>`;
 }
 
-function renderKlineSvg(rows, cacheKey, selectedDate, item, display = pageState.klineDisplay) {
+function renderKlineSvg(rows, cacheKey, selectedDate, item, dividendEvents, display = pageState.klineDisplay) {
   const width = 720;
   const height = 260;
   const padX = 46;
@@ -513,6 +579,23 @@ function renderKlineSvg(rows, cacheKey, selectedDate, item, display = pageState.
         <path d="M ${x.toFixed(2)} ${(y - 5).toFixed(2)} L ${(x - 5).toFixed(2)} ${(y + 4).toFixed(2)} L ${(x + 5).toFixed(2)} ${(y + 4).toFixed(2)} Z"></path>
       </g>`;
   }).join("");
+  const dividendMarkers = display.dividends ? dividendEvents.map((event) => {
+    const exDate = String(event.ex_dividend_date || "").slice(0, 10);
+    const rowIndex = dateToIndex.get(exDate);
+    if (rowIndex === undefined) return "";
+    const row = rows[rowIndex];
+    const high = numberValue(row.high);
+    const x = xFor(rowIndex);
+    const y = high === null ? priceTop + 10 : Math.max(priceTop + 10, yFor(high) - 14);
+    const selected = pageState.klineDividendSelections[cacheKey] === event.marker_id;
+    const title = `${exDate} DIV ${money(event.dividend, 3)} payout ${shortDate(event.payout_date)} source ${event.combined_source || event.source || ""}`;
+    return `
+      <g class="kline-dividend-marker ${selected ? "selected" : ""}" data-kline-dividend-key="${escapeHtml(cacheKey)}" data-kline-dividend-marker="${escapeHtml(event.marker_id)}" tabindex="0" role="button">
+        <title>${escapeHtml(title)}</title>
+        <circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="7"></circle>
+        <text x="${x.toFixed(2)}" y="${(y + 0.7).toFixed(2)}">D</text>
+      </g>`;
+  }).join("") : "";
 
   return `
     <svg class="kline-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="local daily OHLCV K-line">
@@ -526,6 +609,7 @@ function renderKlineSvg(rows, cacheKey, selectedDate, item, display = pageState.
       ${candles}
       ${maPaths}
       ${buyMarkers}
+      ${dividendMarkers}
     </svg>`;
 }
 
@@ -570,6 +654,21 @@ function renderSelectedBuyMarker(item, rows, cacheKey) {
     </div>`;
 }
 
+function renderSelectedDividendMarker(item, rows, cacheKey) {
+  if (!pageState.klineDisplay.dividends) return "";
+  const markerId = pageState.klineDividendSelections[cacheKey];
+  if (!markerId) return "";
+  const event = dedupedDividendEvents(item, rows).find((row) => row.marker_id === markerId);
+  if (!event) return "";
+  return `
+    <div class="kline-dividend-detail">
+      ${detailMetric("除息日", escapeHtml(shortDate(event.ex_dividend_date)))}
+      ${detailMetric("每單位配息", money(event.dividend, 3))}
+      ${detailMetric("發放日", escapeHtml(shortDate(event.payout_date)))}
+      ${detailMetric("來源", escapeHtml(event.combined_source || event.source || "N/A"))}
+    </div>`;
+}
+
 function renderKlineSection(item) {
   const cacheKey = klineCacheKey(item);
   const cache = pageState.klineCache[cacheKey] || { status: "idle" };
@@ -593,6 +692,7 @@ function renderKlineSection(item) {
     const latest = rows[rows.length - 1];
     const selectedDate = pageState.klineSelections[cacheKey] || latest.trade_date || latest.date || "";
     const source = latest.source || first.source || latest.source_market || first.source_market || "N/A";
+    const dividendEvents = dedupedDividendEvents(item, rows);
     body = `
       <div class="kline-summary">
         ${detailMetric("最新收盤", money(latest.close, 2))}
@@ -601,8 +701,9 @@ function renderKlineSection(item) {
         ${detailMetric("來源", escapeHtml(source))}
       </div>
       ${pageState.klineDisplay.ma ? renderMovingAverageLegend(rows) : ""}
-      ${renderKlineSvg(rows, cacheKey, selectedDate, item)}
+      ${renderKlineSvg(rows, cacheKey, selectedDate, item, dividendEvents)}
       ${renderSelectedBuyMarker(item, rows, cacheKey)}
+      ${renderSelectedDividendMarker(item, rows, cacheKey)}
       ${pageState.klineDisplay.detail ? renderSelectedCandle(rows, selectedDate) : ""}`;
   }
 
@@ -711,6 +812,7 @@ function renderPage(data) {
   renderSelector();
   renderSelectedInstrument();
   loadKlineForSelected();
+  loadDividendCalendarForSelected();
 }
 
 async function searchLocalInstruments(term) {
@@ -722,6 +824,7 @@ async function searchLocalInstruments(term) {
     renderSelector();
     renderSelectedInstrument();
     loadKlineForSelected();
+    loadDividendCalendarForSelected();
     return;
   }
 
@@ -735,6 +838,7 @@ async function searchLocalInstruments(term) {
   renderSelector();
   renderSelectedInstrument();
   loadKlineForSelected();
+  loadDividendCalendarForSelected();
 }
 
 async function loadKlineForSelected() {
@@ -770,6 +874,40 @@ async function loadKlineForSelected() {
   }
 }
 
+async function loadDividendCalendarForSelected() {
+  const item = selectedItem();
+  if (!item?.ticker) return;
+  const key = dividendCalendarCacheKey(item);
+  const cached = pageState.dividendCalendarCache[key];
+  if (cached?.status === "loading" || cached?.status === "loaded") return;
+  pageState.dividendCalendarCache[key] = { status: "loading", rows: [] };
+  const range = klineDateRange();
+  const params = new URLSearchParams({
+    ticker: String(item.ticker || "").toUpperCase(),
+    start_year: String(range.startYear),
+    end_year: String(range.endYear),
+  });
+  try {
+    const response = await fetch(withToken(`/api/database/dividends?${params.toString()}`));
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    pageState.dividendCalendarCache[key] = {
+      status: "loaded",
+      rows: Array.isArray(data.records) ? data.records : [],
+      updated_at: data.updated_at || "",
+    };
+  } catch (error) {
+    pageState.dividendCalendarCache[key] = {
+      status: "error",
+      rows: [],
+      error: error.message || String(error),
+    };
+  }
+  if (dividendCalendarCacheKey(selectedItem()) === key) {
+    renderSelectedInstrument();
+  }
+}
+
 async function loadPage(force = false) {
   const button = byId("stock-detail-refresh");
   button.disabled = true;
@@ -795,6 +933,7 @@ byId("stock-detail-search").addEventListener("input", (event) => {
   renderSelector();
   renderSelectedInstrument();
   loadKlineForSelected();
+  loadDividendCalendarForSelected();
   searchTimer = window.setTimeout(() => {
     searchLocalInstruments(pageState.searchTerm).catch((error) => {
       byId("stock-detail-view").innerHTML = `<div class="panel empty">搜尋失敗：${escapeHtml(error.message || error)}</div>`;
@@ -806,6 +945,7 @@ byId("stock-detail-select").addEventListener("change", (event) => {
   pageState.selectedKey = event.target.value;
   renderSelectedInstrument();
   loadKlineForSelected();
+  loadDividendCalendarForSelected();
 });
 document.addEventListener("click", (event) => {
   const candle = event.target.closest("[data-kline-candle]");
@@ -817,6 +957,12 @@ document.addEventListener("click", (event) => {
   const marker = event.target.closest("[data-kline-buy-marker]");
   if (!marker) return;
   pageState.klineBuySelections[marker.dataset.klineBuyKey] = marker.dataset.klineBuyMarker;
+  renderSelectedInstrument();
+});
+document.addEventListener("click", (event) => {
+  const marker = event.target.closest("[data-kline-dividend-marker]");
+  if (!marker) return;
+  pageState.klineDividendSelections[marker.dataset.klineDividendKey] = marker.dataset.klineDividendMarker;
   renderSelectedInstrument();
 });
 document.addEventListener("keydown", (event) => {
@@ -833,6 +979,13 @@ document.addEventListener("keydown", (event) => {
   pageState.klineBuySelections[marker.dataset.klineBuyKey] = marker.dataset.klineBuyMarker;
   renderSelectedInstrument();
 });
+document.addEventListener("keydown", (event) => {
+  const marker = event.target.closest("[data-kline-dividend-marker]");
+  if (!marker || !["Enter", " "].includes(event.key)) return;
+  event.preventDefault();
+  pageState.klineDividendSelections[marker.dataset.klineDividendKey] = marker.dataset.klineDividendMarker;
+  renderSelectedInstrument();
+});
 document.addEventListener("click", (event) => {
   const button = event.target.closest("[data-kline-range]");
   if (!button) return;
@@ -841,6 +994,7 @@ document.addEventListener("click", (event) => {
   pageState.klineRangeDays = days;
   renderSelectedInstrument();
   loadKlineForSelected();
+  loadDividendCalendarForSelected();
 });
 document.addEventListener("click", (event) => {
   const button = event.target.closest("[data-kline-toggle]");
