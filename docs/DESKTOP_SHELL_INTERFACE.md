@@ -10,6 +10,8 @@ The goal is to let the project prototype a desktop shell with `pywebview` first,
 
 The shell should be a container around the local-first app core, not a second business-logic implementation.
 
+The first Python contract lives in `src/desktop_shell.py`. It defines a minimal `DesktopShell` protocol, configuration/status dataclasses, and a dependency-free null shell for tests. It intentionally has no `pywebview`, Tauri, or Electron imports.
+
 ## Current Layering
 
 Planned layers:
