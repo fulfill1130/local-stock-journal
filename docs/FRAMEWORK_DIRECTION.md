@@ -18,7 +18,7 @@ Instrument research should help users inspect one stock or ETF at a time. It sho
 
 ### Import Assistant
 
-The import assistant should support PDFs, images, OCR, and AI-assisted extraction. Its job is to turn messy broker documents into staged candidate records. Import and AI results must go through staging and human review before anything becomes a confirmed ledger write.
+The import assistant should support PDFs, images, OCR, and AI-assisted extraction. Its job is to turn messy broker documents into staged candidate records. Import and AI results must go through staging and human review before anything becomes a confirmed ledger write. See [Import Staging Specification](IMPORT_STAGING_SPEC.md).
 
 ### Market Data Manager
 
@@ -30,7 +30,7 @@ The app shell should provide clearer app-style entry points for demo mode, priva
 
 ### Plugin Layer
 
-The plugin layer is a future extension point for external open-source analysis tools, market data adapters, importers, reports, and assistant rules. Plugins should be read-first and permission-limited by default. Any plugin that proposes ledger changes should produce reviewable staged output instead of writing directly.
+The plugin layer is a future extension point for external open-source analysis tools, market data adapters, importers, reports, and assistant rules. Plugins should be read-first and permission-limited by default. Any plugin that proposes ledger changes should produce reviewable staged output instead of writing directly. See [Plugin System Draft](PLUGIN_SYSTEM_DRAFT.md).
 
 ## Current Public Draft
 
