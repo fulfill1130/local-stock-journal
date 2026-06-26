@@ -1,4 +1,6 @@
-# stock_daily_helper
+# Local Stock Journal
+
+A local-first stock journal and personal investment research dashboard.
 
 `stock_daily_helper` is a local-first stock journal and personal investment research dashboard.
 
