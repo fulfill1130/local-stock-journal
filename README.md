@@ -83,7 +83,15 @@ python scripts/create_demo_data.py
 
 The generated data is deterministic and fully synthetic. It includes fake demo tickers, fake prices, fake transactions, and a fake dividend record. It is for testing and illustration only, not investment advice.
 
-Demo mode is still not fully wired into the runtime app. The sample files are ready for tests and future demo loading, but the public app does not yet provide a full no-setup demo portfolio flow.
+Prepare an isolated generated demo runtime directory with:
+
+```powershell
+python scripts/prepare_demo_runtime.py --reset
+```
+
+`sample_data/` is committed synthetic fixture data. `demo_runtime/` is generated from `sample_data/`, ignored by Git, and safe to delete/recreate when it contains the `.demo_runtime` sentinel. Real private runtime data belongs under `data/` and must never be committed.
+
+Demo mode is still not fully wired into the runtime app. The sample files and generated `demo_runtime/` are ready for tests and future demo loading, but the public app does not yet provide a full no-setup demo portfolio flow.
 
 ## What Currently Works
 

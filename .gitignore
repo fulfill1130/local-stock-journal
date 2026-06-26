@@ -25,6 +25,7 @@ config/*token*
 
 # Local runtime data and private account records
 data/
+demo_runtime/
 profiles/
 uploads/
 output/
