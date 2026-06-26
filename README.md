@@ -29,7 +29,7 @@ This project is **not investment advice**. It cannot place trades, does not conn
 
 See [Security and Privacy](docs/SECURITY_AND_PRIVACY.md) and [Disclaimer](docs/DISCLAIMER.md).
 
-For development notes and project direction, see [Developer Log](DEVLOG.md).
+For development notes and project direction, see [Developer Log](DEVLOG.md) and [Framework Direction](docs/FRAMEWORK_DIRECTION.md).
 
 ## Local Data Ownership
 
