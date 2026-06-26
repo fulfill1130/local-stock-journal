@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from copy import deepcopy
 from datetime import datetime
@@ -12,6 +13,7 @@ from utils import as_float, now_iso
 
 
 SUPPORTED_TRANSACTION_ACTIONS = {"BUY", "SELL"}
+BATCH_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
 def validate_import_payload(
@@ -75,6 +77,44 @@ def create_import_staging_batch(
     result = deepcopy(batch)
     result["path"] = str(batch_path)
     return result
+
+
+def list_import_staging_batches(staging_root: Path, *, profile: str) -> list[dict[str, Any]]:
+    profile_root = Path(staging_root) / str(profile).strip()
+    if not profile_root.exists():
+        return []
+    summaries: list[dict[str, Any]] = []
+    for batch_path in profile_root.glob("*/batch.json"):
+        try:
+            batch = json.loads(batch_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        summaries.append(summarize_import_staging_batch(batch))
+    return sorted(summaries, key=lambda row: str(row.get("created_at") or ""), reverse=True)
+
+
+def load_import_staging_batch(staging_root: Path, *, profile: str, batch_id: str) -> dict[str, Any]:
+    normalized_batch_id = _validate_batch_id(batch_id)
+    batch_path = Path(staging_root) / str(profile).strip() / normalized_batch_id / "batch.json"
+    if not batch_path.exists():
+        raise FileNotFoundError(f"Import staging batch not found: {normalized_batch_id}")
+    return json.loads(batch_path.read_text(encoding="utf-8"))
+
+
+def summarize_import_staging_batch(batch: dict[str, Any]) -> dict[str, Any]:
+    rows = batch.get("rows", [])
+    if not isinstance(rows, list):
+        rows = []
+    return {
+        "batch_id": batch.get("batch_id", ""),
+        "status": batch.get("status", ""),
+        "created_at": batch.get("created_at", ""),
+        "updated_at": batch.get("updated_at", ""),
+        "source": batch.get("source", {}),
+        "row_count": len(rows),
+        "error_count": sum(1 for row in rows if isinstance(row, dict) and row.get("errors")),
+        "warning_count": sum(1 for row in rows if isinstance(row, dict) and row.get("warnings")),
+    }
 
 
 def _split_payload(
@@ -265,3 +305,10 @@ def _duplicate_candidates(
                 }
             )
     return matches
+
+
+def _validate_batch_id(batch_id: str) -> str:
+    normalized = str(batch_id or "").strip()
+    if not normalized or not BATCH_ID_PATTERN.fullmatch(normalized):
+        raise ValueError("Invalid import staging batch id.")
+    return normalized

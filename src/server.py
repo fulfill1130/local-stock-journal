@@ -56,6 +56,12 @@ from central_store import (
 )
 from dividend_fetcher import fetch_twse_etf_dividends, fetch_yahoo_stock_dividends
 from gmail_reader import sync_latest_pdf_attachments
+from import_staging import (
+    create_import_staging_batch,
+    list_import_staging_batches,
+    load_import_staging_batch,
+    summarize_import_staging_batch,
+)
 from market import (
     QuoteService,
     US_MARKETS,
@@ -1336,6 +1342,54 @@ def create_app(
         profile_info(profile_slug, profiles=profiles)
         payload = request.get_json(silent=True) or {}
         return handle_upload_document_base64(profile_slug, payload)
+
+    @app.post("/<profile_slug>/api/import-staging")
+    def api_create_import_staging(profile_slug: str):
+        profile_info(profile_slug, profiles=profiles)
+        if not request.is_json:
+            return jsonify({"ok": False, "error": "Import staging requires a JSON payload."}), 400
+        payload = request.get_json(silent=True)
+        if payload is None:
+            return jsonify({"ok": False, "error": "Invalid JSON payload."}), 400
+        state_path = profile_state_path(project_root, profile_slug, data_root=data_root, profiles=profiles)
+        existing_transactions = load_state(state_path).get("transactions", [])
+        try:
+            batch = create_import_staging_batch(
+                data_root / "imports" / "staging",
+                profile=profile_slug,
+                payload=payload,
+                existing_transactions=existing_transactions if isinstance(existing_transactions, list) else [],
+            )
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify(
+            {
+                "ok": True,
+                "batch": summarize_import_staging_batch(batch),
+                "rows": batch.get("rows", []),
+            }
+        ), 201
+
+    @app.get("/<profile_slug>/api/import-staging")
+    def api_list_import_staging(profile_slug: str):
+        profile_info(profile_slug, profiles=profiles)
+        batches = list_import_staging_batches(data_root / "imports" / "staging", profile=profile_slug)
+        return jsonify({"ok": True, "batches": batches})
+
+    @app.get("/<profile_slug>/api/import-staging/<batch_id>")
+    def api_get_import_staging(profile_slug: str, batch_id: str):
+        profile_info(profile_slug, profiles=profiles)
+        try:
+            batch = load_import_staging_batch(
+                data_root / "imports" / "staging",
+                profile=profile_slug,
+                batch_id=batch_id,
+            )
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except FileNotFoundError:
+            return jsonify({"ok": False, "error": "Import staging batch not found."}), 404
+        return jsonify({"ok": True, "batch": batch})
 
     @app.post("/<profile_slug>/api/transaction")
     def api_transaction(profile_slug: str):
