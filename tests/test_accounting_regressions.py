@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -11,8 +13,8 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from analyzer import build_dashboard_state
-from server import find_duplicate_transaction
-from store import rebuild_holdings_from_transactions, record_buy, record_sell
+from server import find_duplicate_transaction, record_transaction_from_payload
+from store import rebuild_holdings_from_transactions, record_buy, record_sell, trade_consideration_twd
 
 
 def empty_state() -> dict:
@@ -27,6 +29,40 @@ def empty_state() -> dict:
 
 
 class AccountingRegressionTests(unittest.TestCase):
+    def test_trade_consideration_truncates_fractional_twd_like_broker_statement(self) -> None:
+        self.assertEqual(trade_consideration_twd(34, 29.73), 1010)
+
+    def test_buy_uses_truncated_twd_consideration_and_keeps_fee_separate(self) -> None:
+        state = empty_state()
+
+        record_buy(state, "2330", 34, 29.73, fee=1, trade_date="2026-01-01")
+
+        transaction = state["transactions"][0]
+        lot = state["holdings"][0]["lots"][0]
+        self.assertEqual(transaction["gross_amount"], 1010)
+        self.assertEqual(transaction["amount"], 1011)
+        self.assertAlmostEqual(lot["cost_per_share"], 1011 / 34)
+
+    def test_sell_uses_truncated_twd_consideration_and_keeps_fee_tax_separate(self) -> None:
+        state = empty_state()
+        record_buy(state, "2330", 34, 20, fee=0, trade_date="2026-01-01")
+
+        record_sell(state, "2330", 34, 29.73, fee=1, tax=1, trade_date="2026-01-02")
+
+        transaction = state["transactions"][-1]
+        self.assertEqual(transaction["gross_amount"], 1010)
+        self.assertEqual(transaction["amount"], 1008)
+
+    def test_fifo_realized_profit_uses_truncated_buy_and_sell_consideration(self) -> None:
+        state = empty_state()
+        record_buy(state, "2330", 34, 29.73, fee=1, trade_date="2026-01-01")
+
+        record_sell(state, "2330", 10, 30.25, fee=1, tax=0, trade_date="2026-01-02")
+
+        sell = state["transactions"][-1]
+        self.assertEqual(sell["gross_amount"], 302)
+        self.assertAlmostEqual(sell["realized_pnl"], 302 - 1 - (10 * (1011 / 34)))
+
     def test_fifo_sell_consumes_oldest_lots_first(self) -> None:
         state = empty_state()
         record_buy(state, "2330", 10, 100, fee=10, trade_date="2026-01-01")
@@ -99,6 +135,32 @@ class AccountingRegressionTests(unittest.TestCase):
         self.assertEqual(dashboard["summary"]["realized_trade_pnl_total"], 100)
         self.assertEqual(dashboard["summary"]["dividend_income_total"], 25)
         self.assertEqual(dashboard["summary"]["realized_pnl_total"], 125)
+
+    def test_server_transaction_fee_estimate_uses_truncated_consideration(self) -> None:
+        state = empty_state()
+        state["settings"] = {"cash_available": 2000, "broker_fee_rate": 0.001485}
+        with tempfile.TemporaryDirectory() as tmp:
+            state_path = Path(tmp) / "state.json"
+            state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+            result = record_transaction_from_payload(
+                state_path,
+                {
+                    "action": "BUY",
+                    "date": "2026-01-01",
+                    "ticker": "2330",
+                    "shares": 34,
+                    "price": 29.73,
+                },
+            )
+
+            updated = json.loads(state_path.read_text(encoding="utf-8"))
+
+        transaction = updated["transactions"][0]
+        self.assertEqual(result["gross_amount"], 1010)
+        self.assertEqual(result["fee"], 1)
+        self.assertEqual(result["cash_delta"], -1011)
+        self.assertEqual(transaction["amount"], 1011)
 
     def test_split_adjustment_rebuilds_remaining_shares_and_cost_basis(self) -> None:
         state = empty_state()

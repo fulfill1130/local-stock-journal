@@ -69,7 +69,7 @@ from market import (
 from official_sync import sync_missing_official_daily_bars
 from official_market import fetch_tpex_month, fetch_twse_listed_company_profiles, fetch_twse_month, month_starts, parse_iso_date
 from scheduler import append_refresh_log, start_daily_time_scheduler, start_interval_refresh_scheduler
-from store import ensure_transaction_ids, load_state, public_state_copy, rebuild_holdings_from_transactions, record_buy, record_sell, save_state, update_state
+from store import ensure_transaction_ids, load_state, public_state_copy, rebuild_holdings_from_transactions, record_buy, record_sell, save_state, trade_consideration_twd, update_state
 from utils import as_float, fmt_money, fmt_pct, now_string, yahoo_symbol
 
 
@@ -2872,7 +2872,7 @@ def record_transaction_from_payload(
 
     def mutator(state: dict[str, Any]) -> None:
         settings = state.setdefault("settings", {})
-        gross_amount = shares * price
+        gross_amount = trade_consideration_twd(shares, price)
         fee = provided_fee if provided_fee is not None else estimate_charge(gross_amount, settings.get("broker_fee_rate"))
         tax = 0.0
         if action == "SELL":
@@ -3089,7 +3089,7 @@ def update_transaction_from_payload(
         if action == "BUY":
             tax = 0.0
 
-        gross_amount = shares * price
+        gross_amount = trade_consideration_twd(shares, price)
         transaction.update(
             {
                 "time": trade_date,
@@ -3161,7 +3161,7 @@ def transaction_cash_delta(transaction: dict[str, Any]) -> float:
     price = as_float(transaction.get("price"), 0) or 0
     fee = as_float(transaction.get("fee"), 0) or 0
     tax = as_float(transaction.get("tax"), 0) or 0
-    gross = shares * price
+    gross = trade_consideration_twd(shares, price)
     action = str(transaction.get("action", "")).strip().upper()
     if action == "BUY":
         return -(gross + fee)

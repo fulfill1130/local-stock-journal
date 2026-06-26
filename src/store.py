@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 from copy import deepcopy
+from decimal import Decimal, ROUND_DOWN
 from hashlib import sha1
 from pathlib import Path
 from typing import Any, Callable
@@ -38,6 +39,12 @@ def update_state(path: Path, mutator: Callable[[dict[str, Any]], None]) -> dict[
     mutator(state)
     save_state(path, state)
     return state
+
+
+def trade_consideration_twd(shares: Any, price: Any) -> int:
+    """Taiwan broker statements truncate fractional TWD after price times shares."""
+    consideration = Decimal(str(price)) * Decimal(str(shares))
+    return int(consideration.to_integral_value(rounding=ROUND_DOWN))
 
 
 def record_buy(
@@ -84,7 +91,7 @@ def record_buy(
             "remaining_shares": shares,
             "price": price,
             "fee": fee,
-            "cost_per_share": ((shares * price) + fee) / shares,
+            "cost_per_share": (trade_consideration_twd(shares, price) + fee) / shares,
         }
     )
     _recalculate_holding_from_lots(holding)
@@ -124,7 +131,8 @@ def record_sell(
 
     consumed = _consume_fifo_lots(state, holding, ticker, shares)
     realized_cost = sum(item["shares"] * item["cost_per_share"] for item in consumed)
-    net_amount = (shares * price) - fee - tax
+    gross_amount = trade_consideration_twd(shares, price)
+    net_amount = gross_amount - fee - tax
     realized_pnl = net_amount - realized_cost
     _recalculate_holding_from_lots(holding)
     holding.pop("broker", None)
@@ -236,7 +244,7 @@ def _append_transaction(
     trade_date: str | None = None,
     lots: list[dict[str, Any]] | None = None,
 ) -> None:
-    gross_amount = shares * price
+    gross_amount = trade_consideration_twd(shares, price)
     amount = gross_amount + fee if action == "BUY" else gross_amount - fee - tax
     state.setdefault("transactions", []).append(
         {
@@ -368,7 +376,7 @@ def rebuild_holdings_from_transactions(
                     "remaining_shares": shares,
                     "price": price,
                     "fee": fee,
-                    "cost_per_share": ((shares * price) + fee) / shares,
+                    "cost_per_share": (trade_consideration_twd(shares, price) + fee) / shares,
                 }
             )
             _recalculate_holding_from_lots(holding)
@@ -383,7 +391,7 @@ def rebuild_holdings_from_transactions(
                 continue
             realized_cost = sum(item["shares"] * item["cost_per_share"] for item in consumed)
             transaction["lots"] = consumed
-            transaction["realized_pnl"] = (shares * price) - fee - tax - realized_cost
+            transaction["realized_pnl"] = trade_consideration_twd(shares, price) - fee - tax - realized_cost
             transaction.pop("conflict", None)
             _recalculate_holding_from_lots(holding)
 
@@ -559,7 +567,7 @@ def _rebuild_lots_from_transactions(state: dict[str, Any], ticker: str) -> list[
                     "remaining_shares": shares,
                     "price": price,
                     "fee": fee,
-                    "cost_per_share": ((shares * price) + fee) / shares if shares else 0,
+                    "cost_per_share": (trade_consideration_twd(shares, price) + fee) / shares if shares else 0,
                 }
             )
         elif action == "SELL":
