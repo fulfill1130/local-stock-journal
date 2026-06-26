@@ -78,22 +78,73 @@ PROFILES = {
     "mom": "母親帳戶",
 }
 DEFAULT_PROFILE = "son"
+DEMO_PROFILE = {"demo": "Demo Mode / 合成資料"}
+DEMO_SENTINEL = ".demo_runtime"
 
 
-def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool = False) -> Flask:
+class DemoRuntimeError(RuntimeError):
+    pass
+
+
+def demo_runtime_instructions() -> str:
+    return (
+        "Demo runtime is not ready. Run:\n"
+        "python scripts/create_demo_data.py\n"
+        "python scripts/prepare_demo_runtime.py --reset"
+    )
+
+
+def validate_demo_runtime(project_root: Path, runtime_root: Path | None = None) -> Path:
+    root = Path(project_root).resolve()
+    target = Path(runtime_root or root / "demo_runtime").resolve()
+    forbidden_roots = {root / "data", root / "sample_data"}
+    if target == root or any(target == forbidden or forbidden in target.parents for forbidden in forbidden_roots):
+        raise DemoRuntimeError(f"Refusing unsafe demo runtime target: {target}")
+    if not target.exists():
+        raise DemoRuntimeError(demo_runtime_instructions())
+    if not (target / DEMO_SENTINEL).exists():
+        raise DemoRuntimeError(f"Refusing demo runtime without {DEMO_SENTINEL}: {target}")
+    if not (target / "profiles" / "demo" / "state.json").exists():
+        raise DemoRuntimeError(f"Demo profile missing: {target / 'profiles' / 'demo' / 'state.json'}")
+    if not (target / "market_data").exists():
+        raise DemoRuntimeError(f"Demo market data missing: {target / 'market_data'}")
+    return target
+
+
+def create_app(
+    project_root: Path,
+    share_token: str = "",
+    refresh_on_start: bool = False,
+    runtime_root: Path | None = None,
+    demo_mode: bool = False,
+) -> Flask:
+    project_root = Path(project_root)
+    data_root = validate_demo_runtime(project_root, runtime_root) if demo_mode else project_root / "data"
+    profiles = DEMO_PROFILE if demo_mode else PROFILES
+    default_profile = "demo" if demo_mode else DEFAULT_PROFILE
     app = Flask(
         __name__,
         template_folder=str(project_root / "src" / "templates"),
         static_folder=str(project_root / "src" / "static"),
     )
-    ensure_profile_files(project_root)
-    central_db_path = project_root / "data" / "market_data"
-    quote_cache_path = project_root / "data" / "quotes_cache.json"
+    app.config["DEMO_MODE"] = demo_mode
+    app.config["RUNTIME_ROOT"] = str(data_root)
+    if not demo_mode:
+        ensure_profile_files(project_root)
+    central_db_path = data_root / "market_data"
+    quote_cache_path = data_root / "quotes_cache.json"
     ensure_central_db(central_db_path)
-    migrate_legacy_central_db(project_root / "data" / "central.sqlite", central_db_path)
-    seed_central_from_profiles(project_root, central_db_path)
-    rebuild_health_summary(central_db_path)
-    refresh_log_path = project_root / "data" / "refresh_log.json"
+    if not demo_mode:
+        migrate_legacy_central_db(project_root / "data" / "central.sqlite", central_db_path)
+        seed_central_from_profiles(project_root, central_db_path)
+        rebuild_health_summary(central_db_path)
+    refresh_log_path = data_root / "refresh_log.json"
+
+    @app.before_request
+    def block_demo_writes():
+        if demo_mode and request.method != "GET":
+            return jsonify({"ok": False, "error": "Demo mode is read-only and uses synthetic data."}), 403
+        return None
 
     @app.before_request
     def require_share_token():
@@ -112,8 +163,8 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
         source: str = "api",
         force_symbols: list[str] | None = None,
     ) -> dict:
-        profile = profile_info(profile_slug)
-        state_path = profile_state_path(project_root, profile_slug)
+        profile = profile_info(profile_slug, profiles=profiles)
+        state_path = profile_state_path(project_root, profile_slug, data_root=data_root, profiles=profiles)
         loaded_state = load_state(state_path)
         changed = ensure_transaction_ids(loaded_state)
         split_actions = list_corporate_actions(central_db_path)
@@ -127,14 +178,26 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
         raw_state["holdings"] = enrich_items_with_instruments(central_db_path, raw_state.get("holdings", []))
         raw_state["watchlist"] = enrich_items_with_instruments(central_db_path, raw_state.get("watchlist", []))
         refresh_seconds = raw_state.get("settings", {}).get("refresh_seconds", 900)
-        service = QuoteService(quote_cache_path, refresh_seconds=refresh_seconds)
         manual_started_at = datetime.now().astimezone().isoformat(timespec="seconds") if force else ""
-        quotes = service.get_quotes(
-            symbols_for_state(raw_state),
-            force=force,
-            force_symbols=force_symbols,
-        )
-        intraday_written = upsert_ohlcv_intraday_15m(central_db_path, service.intraday_15m_rows)
+        if demo_mode:
+            quotes = load_quote_cache(quote_cache_path)
+            refresh_summary = {
+                "demo_mode": True,
+                "source": "demo_runtime/quotes_cache.json",
+                "requested_symbols": [],
+                "skipped_symbols": list(symbols_for_state(raw_state)),
+                "forced_symbols": [],
+            }
+            intraday_written = 0
+        else:
+            service = QuoteService(quote_cache_path, refresh_seconds=refresh_seconds)
+            quotes = service.get_quotes(
+                symbols_for_state(raw_state),
+                force=force,
+                force_symbols=force_symbols,
+            )
+            refresh_summary = service.refresh_summary
+            intraday_written = upsert_ohlcv_intraday_15m(central_db_path, service.intraday_15m_rows)
         profile_items = raw_state.get("holdings", []) + raw_state.get("watchlist", [])
         quotes = apply_daily_quote_fallbacks(
             central_db_path,
@@ -162,11 +225,12 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
         dashboard["transaction_book"] = transaction_book_payload(raw_state.get("transactions", []))
         dashboard["updated_at"] = now_string()
         dashboard["data_status"] = data_status_payload(central_db_path)
-        dashboard["refresh_policy"] = service.refresh_summary
+        dashboard["refresh_policy"] = refresh_summary
         dashboard["refresh_policy"]["intraday_15m_rows_written"] = intraday_written
         dashboard["profile"] = profile
+        dashboard["demo_mode"] = demo_mode
         dashboard["known_trade_items"] = trade_import_known_items(raw_state, central_db_path)
-        if force:
+        if force and not demo_mode:
             requested = set(service.refresh_summary.get("requested_symbols", []))
             tw_requested = {symbol for symbol in requested if symbol.endswith(".TW") or symbol.endswith(".TWO")}
             us_requested = requested - tw_requested
@@ -219,7 +283,7 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
             next_run_at=next_interval_run_at("us").isoformat(timespec="seconds"),
             message="15m scheduler started",
         )
-        tracked_items = tracked_profile_items(project_root, central_db_path)
+        tracked_items = tracked_profile_items(project_root, central_db_path, profiles=profiles, data_root=data_root)
         service = QuoteService(quote_cache_path, refresh_seconds=900)
         try:
             service.get_quotes(
@@ -264,7 +328,7 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
                 status="success",
                 message=f"requested={len(us_requested)}",
             )
-            for profile_slug in PROFILES:
+            for profile_slug in profiles:
                 current_dashboard(
                     profile_slug,
                     force=False,
@@ -304,7 +368,7 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
             next_run_at=next_daily_run_at("13:31").isoformat(timespec="seconds"),
             message="after-close scheduler started",
         )
-        tracked_items = tracked_profile_items(project_root, central_db_path)
+        tracked_items = tracked_profile_items(project_root, central_db_path, profiles=profiles, data_root=data_root)
         intraday_rows: list[dict[str, Any]] = []
         after_close_rows: list[dict[str, Any]] = []
         failed_symbols: list[str] = []
@@ -568,7 +632,7 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
                     "skip",
                     "skip before 14:00; official daily data is not expected yet",
                 )
-            for index, profile_slug in enumerate(PROFILES):
+            for index, profile_slug in enumerate(profiles):
                 current_dashboard(
                     profile_slug,
                     force=index == 0,
@@ -579,28 +643,28 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
 
     @app.get("/")
     def index():
-        return redirect(url_for("profile_index", profile_slug=DEFAULT_PROFILE))
+        return redirect(url_for("profile_index", profile_slug=default_profile))
 
     @app.get("/p/<profile_slug>")
     def legacy_profile_index(profile_slug: str):
-        profile_info(profile_slug)
+        profile_info(profile_slug, profiles=profiles)
         return redirect(url_for("profile_index", profile_slug=profile_slug))
 
     @app.get("/database")
     def database_index():
-        return render_template("database.html", profiles=profile_links())
+        return render_template("database.html", profiles=profile_links(profiles))
 
     @app.get("/database/dividends")
     def database_dividends_index():
-        return render_template("dividends.html", profiles=profile_links())
+        return render_template("dividends.html", profiles=profile_links(profiles))
 
     @app.get("/database/logs")
     def database_logs_index():
-        return render_template("logs.html", profiles=profile_links())
+        return render_template("logs.html", profiles=profile_links(profiles))
 
     @app.get("/database/uploads")
     def database_uploads_index():
-        return render_template("uploads.html", profiles=profile_links())
+        return render_template("uploads.html", profiles=profile_links(profiles))
 
     @app.get("/api/database")
     def api_database():
@@ -666,16 +730,16 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
 
     @app.post("/api/database/uploads")
     def api_database_upload():
-        profile_slug = str(request.form.get("profile") or DEFAULT_PROFILE).strip()
-        if profile_slug not in PROFILES:
+        profile_slug = str(request.form.get("profile") or default_profile).strip()
+        if profile_slug not in profiles:
             return jsonify({"ok": False, "error": "unknown profile"}), 400
         return handle_upload_document(profile_slug)
 
     @app.post("/api/database/uploads-base64")
     def api_database_upload_base64():
         payload = request.get_json(silent=True) or {}
-        profile_slug = str(payload.get("profile") or DEFAULT_PROFILE).strip()
-        if profile_slug not in PROFILES:
+        profile_slug = str(payload.get("profile") or default_profile).strip()
+        if profile_slug not in profiles:
             return jsonify({"ok": False, "error": "unknown profile"}), 400
         return handle_upload_document_base64(profile_slug, payload)
 
@@ -1078,8 +1142,8 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
             source="manual",
         )
         split_actions = list_corporate_actions(central_db_path)
-        for slug in PROFILES:
-            state_path = profile_state_path(project_root, slug)
+        for slug in profiles:
+            state_path = profile_state_path(project_root, slug, data_root=data_root, profiles=profiles)
             state = load_state(state_path)
             rebuild_holdings_from_transactions(state, split_actions)
             save_state(state_path, state)
@@ -1220,12 +1284,12 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
 
     @app.get("/<profile_slug>")
     def profile_index(profile_slug: str):
-        profile = profile_info(profile_slug)
+        profile = profile_info(profile_slug, profiles=profiles)
         return render_template("dashboard.html", profile=profile)
 
     @app.get("/<profile_slug>/stocks")
     def profile_stock_details(profile_slug: str):
-        profile = profile_info(profile_slug)
+        profile = profile_info(profile_slug, profiles=profiles)
         return render_template("stock_detail.html", profile=profile)
 
     @app.get("/<profile_slug>/api/state")
@@ -1238,7 +1302,7 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
 
     @app.post("/<profile_slug>/api/cash")
     def api_cash(profile_slug: str):
-        state_path = profile_state_path(project_root, profile_slug)
+        state_path = profile_state_path(project_root, profile_slug, data_root=data_root, profiles=profiles)
         payload = request.get_json(silent=True) or {}
         try:
             result = record_cash_deposit_from_payload(state_path, payload)
@@ -1251,7 +1315,7 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
 
     @app.post("/<profile_slug>/api/dividend-income")
     def api_dividend_income(profile_slug: str):
-        state_path = profile_state_path(project_root, profile_slug)
+        state_path = profile_state_path(project_root, profile_slug, data_root=data_root, profiles=profiles)
         payload = request.get_json(silent=True) or {}
         try:
             result = record_dividend_income_from_payload(state_path, payload)
@@ -1264,18 +1328,18 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
 
     @app.post("/<profile_slug>/api/uploads")
     def api_profile_upload(profile_slug: str):
-        profile_info(profile_slug)
+        profile_info(profile_slug, profiles=profiles)
         return handle_upload_document(profile_slug)
 
     @app.post("/<profile_slug>/api/uploads-base64")
     def api_profile_upload_base64(profile_slug: str):
-        profile_info(profile_slug)
+        profile_info(profile_slug, profiles=profiles)
         payload = request.get_json(silent=True) or {}
         return handle_upload_document_base64(profile_slug, payload)
 
     @app.post("/<profile_slug>/api/transaction")
     def api_transaction(profile_slug: str):
-        state_path = profile_state_path(project_root, profile_slug)
+        state_path = profile_state_path(project_root, profile_slug, data_root=data_root, profiles=profiles)
         payload = request.get_json(silent=True) or {}
         try:
             result = record_transaction_from_payload(state_path, payload, central_db_path=central_db_path)
@@ -1294,7 +1358,7 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
 
     @app.patch("/<profile_slug>/api/transactions/<transaction_id>")
     def api_update_transaction(profile_slug: str, transaction_id: str):
-        state_path = profile_state_path(project_root, profile_slug)
+        state_path = profile_state_path(project_root, profile_slug, data_root=data_root, profiles=profiles)
         payload = request.get_json(silent=True) or {}
         try:
             result = update_transaction_from_payload(state_path, transaction_id, payload, central_db_path=central_db_path)
@@ -1307,7 +1371,7 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
 
     @app.delete("/<profile_slug>/api/transactions/<transaction_id>")
     def api_delete_transaction(profile_slug: str, transaction_id: str):
-        state_path = profile_state_path(project_root, profile_slug)
+        state_path = profile_state_path(project_root, profile_slug, data_root=data_root, profiles=profiles)
         try:
             result = delete_transaction_from_payload(state_path, transaction_id, central_db_path=central_db_path)
         except ValueError as exc:
@@ -1319,7 +1383,7 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
 
     @app.post("/<profile_slug>/api/import/extract")
     def api_import_extract(profile_slug: str):
-        profile_info(profile_slug)
+        profile_info(profile_slug, profiles=profiles)
         started_at = now_string()
         upload = request.files.get("file")
         if upload is None or not upload.filename:
@@ -1382,7 +1446,7 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
 
     @app.post("/<profile_slug>/api/import/extract-base64")
     def api_import_extract_base64(profile_slug: str):
-        profile_info(profile_slug)
+        profile_info(profile_slug, profiles=profiles)
         started_at = now_string()
         payload = request.get_json(silent=True) or {}
         filename = str(payload.get("filename") or "upload.pdf")
@@ -1445,7 +1509,7 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
 
     @app.post("/<profile_slug>/api/import/extract-latest-local")
     def api_import_extract_latest_local(profile_slug: str):
-        profile_info(profile_slug)
+        profile_info(profile_slug, profiles=profiles)
         payload = request.get_json(silent=True) or {}
         password = str(payload.get("password") or request.form.get("password") or request.args.get("password") or "")
         folder = project_root / "到現在的買賣"
@@ -1491,7 +1555,7 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
 
         digest = hashlib.sha256(payload).hexdigest()
         today = date.today()
-        upload_dir = project_root / "data" / "uploads" / profile_slug / f"{today:%Y}" / f"{today:%m}"
+        upload_dir = data_root / "uploads" / profile_slug / f"{today:%Y}" / f"{today:%m}"
         upload_dir.mkdir(parents=True, exist_ok=True)
         safe_name = secure_filename(original) or "upload"
         suffix = Path(safe_name).suffix.lower()
@@ -1587,7 +1651,7 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
 
         digest = hashlib.sha256(payload).hexdigest()
         today = date.today()
-        upload_dir = project_root / "data" / "uploads" / profile_slug / f"{today:%Y}" / f"{today:%m}"
+        upload_dir = data_root / "uploads" / profile_slug / f"{today:%Y}" / f"{today:%m}"
         upload_dir.mkdir(parents=True, exist_ok=True)
         safe_name = secure_filename(filename) or "upload"
         suffix = Path(safe_name).suffix.lower()
@@ -1638,7 +1702,7 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
     def safe_uploaded_document_path(project_root: Path, document: dict[str, Any]) -> Path:
         relative = str(document.get("stored_path") or "").replace("\\", "/")
         path = (project_root / relative).resolve()
-        upload_root = (project_root / "data" / "uploads").resolve()
+        upload_root = (data_root / "uploads").resolve()
         if upload_root not in path.parents and path != upload_root:
             abort(403)
         return path
@@ -1652,11 +1716,11 @@ def create_app(project_root: Path, share_token: str = "", refresh_on_start: bool
 
     @app.get("/api/state")
     def legacy_api_state():
-        return jsonify(current_dashboard(DEFAULT_PROFILE, force=False))
+        return jsonify(current_dashboard(default_profile, force=False))
 
     @app.post("/api/refresh")
     def legacy_api_refresh():
-        return jsonify(current_dashboard(DEFAULT_PROFILE, force=True, source="manual-button"))
+        return jsonify(current_dashboard(default_profile, force=True, source="manual-button"))
 
     @app.get("/health")
     def health():
@@ -1754,10 +1818,16 @@ def sync_official_listing_dates(central_db_path: Path) -> None:
         )
 
 
-def tracked_profile_items(project_root: Path, central_db_path: Path) -> list[dict[str, Any]]:
+def tracked_profile_items(
+    project_root: Path,
+    central_db_path: Path,
+    profiles: dict[str, str] | None = None,
+    data_root: Path | None = None,
+) -> list[dict[str, Any]]:
     items_by_ticker: dict[str, dict[str, Any]] = {}
-    for profile_slug in PROFILES:
-        state_path = profile_state_path(project_root, profile_slug)
+    active_profiles = profiles or PROFILES
+    for profile_slug in active_profiles:
+        state_path = profile_state_path(project_root, profile_slug, data_root=data_root, profiles=active_profiles)
         if not state_path.exists():
             continue
         state = load_state(state_path)
@@ -2312,14 +2382,21 @@ def attach_sparklines(path: Path, items: list[dict[str, Any]]) -> list[dict[str,
     return enriched
 
 
-def profile_state_path(project_root: Path, profile_slug: str) -> Path:
-    profile_info(profile_slug)
-    return project_root / "data" / "profiles" / profile_slug / "state.json"
+def profile_state_path(
+    project_root: Path,
+    profile_slug: str,
+    data_root: Path | None = None,
+    profiles: dict[str, str] | None = None,
+) -> Path:
+    profile = profile_info(profile_slug, profiles=profiles)
+    root = Path(data_root) if data_root is not None else Path(project_root) / "data"
+    return root / "profiles" / profile["slug"] / "state.json"
 
 
-def profile_info(profile_slug: str) -> dict[str, str]:
+def profile_info(profile_slug: str, profiles: dict[str, str] | None = None) -> dict[str, str]:
     slug = str(profile_slug).strip().lower()
-    label = PROFILES.get(slug)
+    active_profiles = profiles or PROFILES
+    label = active_profiles.get(slug)
     if label is None:
         abort(404)
     return {
@@ -2428,10 +2505,11 @@ def dividend_source_family(value: object) -> str:
     return "other"
 
 
-def profile_links() -> list[dict[str, str]]:
+def profile_links(profiles: dict[str, str] | None = None) -> list[dict[str, str]]:
+    active_profiles = profiles or PROFILES
     return [
         {"slug": slug, "label": label, "url": f"/{slug}"}
-        for slug, label in PROFILES.items()
+        for slug, label in active_profiles.items()
     ]
 
 

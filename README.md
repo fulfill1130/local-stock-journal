@@ -91,7 +91,13 @@ python scripts/prepare_demo_runtime.py --reset
 
 `sample_data/` is committed synthetic fixture data. `demo_runtime/` is generated from `sample_data/`, ignored by Git, and safe to delete/recreate when it contains the `.demo_runtime` sentinel. Real private runtime data belongs under `data/` and must never be committed.
 
-Demo mode is still not fully wired into the runtime app. The sample files and generated `demo_runtime/` are ready for tests and future demo loading, but the public app does not yet provide a full no-setup demo portfolio flow.
+Run the read-only synthetic demo server with:
+
+```powershell
+python src/main.py serve-demo
+```
+
+The demo server uses `demo_runtime/` only, serves the `demo` profile, disables background refresh jobs, and blocks write/import/refresh actions. It does not use real `data/`.
 
 ## What Currently Works
 
@@ -118,6 +124,14 @@ Server:
 
 ```powershell
 python src/main.py serve
+```
+
+Demo server:
+
+```powershell
+python scripts/create_demo_data.py
+python scripts/prepare_demo_runtime.py --reset
+python src/main.py serve-demo
 ```
 
 Market database utilities:

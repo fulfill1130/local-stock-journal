@@ -35,7 +35,15 @@ from official_market import (
     parse_iso_date,
 )
 from official_sync import sync_missing_official_daily_bars
-from server import DEFAULT_PROFILE, PROFILES, create_app, ensure_profile_files, profile_state_path
+from server import (
+    DEFAULT_PROFILE,
+    PROFILES,
+    DemoRuntimeError,
+    create_app,
+    ensure_profile_files,
+    profile_state_path,
+    validate_demo_runtime,
+)
 from store import (
     rebuild_holdings_from_transactions,
     record_buy,
@@ -68,6 +76,23 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--debug", action="store_true")
     serve.add_argument("--share-token", default="")
     serve.add_argument("--refresh-on-start", action="store_true")
+
+    serve_demo = sub.add_parser("serve-demo", help="Start a read-only synthetic demo dashboard")
+    serve_demo.add_argument("--host", default="127.0.0.1")
+    serve_demo.add_argument("--port", type=int, default=8787)
+    serve_demo.add_argument("--debug", action="store_true")
+    serve_demo.add_argument("--share-token", default="")
+    serve_demo.add_argument(
+        "--runtime",
+        type=Path,
+        default=None,
+        help="Demo runtime directory. Defaults to ./demo_runtime.",
+    )
+    serve_demo.add_argument(
+        "--check",
+        action="store_true",
+        help="Validate and create the demo app, then exit without starting the server.",
+    )
 
     buy = sub.add_parser("buy", help="Record a buy and update holdings")
     buy.add_argument("ticker")
@@ -283,6 +308,28 @@ def run_cli(project_root: Path, argv: list[str] | None = None) -> int:
         )
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 1 if summary["failed"] else 0
+
+    if args.command == "serve-demo":
+        try:
+            demo_runtime = validate_demo_runtime(project_root, args.runtime)
+        except DemoRuntimeError as exc:
+            print(str(exc))
+            return 2
+        app = create_app(
+            project_root,
+            share_token=getattr(args, "share_token", ""),
+            refresh_on_start=False,
+            runtime_root=demo_runtime,
+            demo_mode=True,
+        )
+        host = getattr(args, "host", "127.0.0.1")
+        port = getattr(args, "port", 8787)
+        print(f"Demo Dashboard: http://{host}:{port}/demo")
+        print(f"Demo runtime: {demo_runtime}")
+        if getattr(args, "check", False):
+            return 0
+        app.run(host=host, port=port, debug=getattr(args, "debug", False))
+        return 0
 
     if args.command in (None, "serve"):
         app = create_app(
