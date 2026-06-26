@@ -132,6 +132,7 @@ async function loadState(force = false) {
     const data = await response.json();
     state.lastData = data;
     render(data);
+    loadMarketDataStatus();
     return data;
   } catch (error) {
     setText("updated-at", `載入失敗：${error.message || error}`);
@@ -358,6 +359,99 @@ function renderDataStatus(items) {
       </article>
     `;
   }).join("");
+}
+
+async function loadMarketDataStatus() {
+  const root = el("market-data-status-card");
+  if (!root) return;
+  try {
+    const response = await fetch(withToken("/api/market-data-status"));
+    const data = await response.json();
+    if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+    renderMarketDataStatus(data);
+  } catch (error) {
+    root.innerHTML = `<div class="empty">資料狀態讀取失敗：${escapeHtml(error.message || error)}</div>`;
+  }
+}
+
+function renderMarketDataStatus(data) {
+  const root = el("market-data-status-card");
+  if (!root) return;
+  const ohlcv = data.ohlcv || {};
+  const official = data.official_daily || {};
+  const quotes = data.quotes || {};
+  const afterClose = data.after_close || {};
+  const segments = ohlcv.segments || {};
+  const segmentRows = ["etf", "twse", "tpex"].map((key) => {
+    const segment = segments[key] || {};
+    return `
+      <div class="market-data-segment">
+        <span>${marketSegmentLabel(key)}</span>
+        <strong>${dateText(segment.last_date)}</strong>
+      </div>
+    `;
+  }).join("");
+  const officialStatus = officialStatusLabel(official.status);
+  const officialMessage = official.message ? `<p class="market-data-message">${escapeHtml(official.message)}</p>` : "";
+  const demoNote = data.demo_mode
+    ? `<p class="market-data-demo-note">Demo Mode：目前顯示本機合成資料，不會自動刷新市場資料。</p>`
+    : "";
+
+  root.innerHTML = `
+    ${demoNote}
+    <div class="market-data-status-grid">
+      ${marketDataMetric("日線更新至", dateText(ohlcv.updated_through), `${money(ohlcv.row_count || 0, 0)} 筆日線`)}
+      ${marketDataMetric("官方日線同步", officialStatus, formatIsoTime(official.last_finished_at || official.last_started_at), statusClassForOfficial(official.status))}
+      ${marketDataMetric("報價快取", formatIsoTime(quotes.latest_cache_timestamp), "與官方日線分開顯示")}
+      ${marketDataMetric("盤後報價", dateText(afterClose.max_quote_date), "不覆蓋官方日線")}
+    </div>
+    <div class="market-data-segments" aria-label="分市場日線日期">
+      ${segmentRows}
+    </div>
+    ${officialMessage}
+  `;
+}
+
+function marketDataMetric(label, value, hint = "", extraClass = "") {
+  return `
+    <article class="market-data-metric ${escapeHtml(extraClass)}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value || "尚未更新")}</strong>
+      ${hint ? `<small>${escapeHtml(hint)}</small>` : ""}
+    </article>
+  `;
+}
+
+function marketSegmentLabel(key) {
+  return {
+    etf: "ETF",
+    twse: "上市",
+    tpex: "上櫃",
+  }[key] || key;
+}
+
+function officialStatusLabel(value) {
+  const status = String(value || "").toLowerCase();
+  return {
+    success: "成功",
+    failed: "失敗",
+    running: "更新中",
+    pending: "尚未更新",
+    unknown: "未知",
+    local_fixture: "Demo 合成資料",
+  }[status] || status || "尚未更新";
+}
+
+function statusClassForOfficial(value) {
+  const status = String(value || "").toLowerCase();
+  if (status === "failed") return "status-failed";
+  if (status === "local_fixture") return "status-demo";
+  if (status === "success") return "status-ok";
+  return "";
+}
+
+function dateText(value) {
+  return value || "無資料";
 }
 
 function renderHoldings(items) {
