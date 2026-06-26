@@ -47,7 +47,7 @@ Do not rename or remove existing profiles until a settings loader exists and pro
 | `config/gmail_token.json` | `src/cli.py`; `src/server.py` | Gmail OAuth token path. |
 | Flask templates/static under `src/templates` and `src/static` | `src/server.py` | App factory assumes project layout. |
 | Script logs under `data/*startup*.log` | `scripts/*.ps1` | Windows helper scripts assume local data directory. |
-| `C:\Python314\python.exe` and private host IP | `run_dashboard_server.cmd`; `scripts/start_dashboard_tailscale.ps1` | Local machine assumptions, not framework defaults. |
+| Local Python executable paths and private host IPs | Local launch scripts, if users create them | User-specific paths and private network addresses should stay local and should not be hardcoded in tracked public scripts. |
 
 Future settings bucket: `paths`, with separate runtime, config, upload, cache, log, and legacy paths.
 
@@ -127,7 +127,7 @@ Provider settings should eventually declare capabilities, rate limits, source qu
 | Optional share token is passed through query string or `X-Share-Token`. | `src/server.py`; frontend token helpers | `auth.local_share_token` |
 | Tailscale script discovers a Tailscale IP and opens profile path. | `scripts/start_dashboard_tailscale.ps1` | Local deployment helper config |
 | Firewall helper opens port `8787` for Tailscale. | `scripts/allow_tailscale_firewall.ps1` | Local deployment helper config |
-| `run_dashboard_server.cmd` hardcodes a Windows Python path and private host IP. | `run_dashboard_server.cmd` | Local-only script, not framework default |
+| User-created launch scripts may hardcode a local Python path or private host IP. | Local untracked scripts only | Public scripts should discover the Python executable or accept user-provided host values. |
 
 ## UI and Localization Assumptions
 
@@ -211,4 +211,3 @@ ui:
 ```
 
 This is an inventory shape only. Introducing the loader should happen in a separate, tested change.
-

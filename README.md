@@ -94,10 +94,17 @@ python scripts/prepare_demo_runtime.py --reset
 Run the read-only synthetic demo server with:
 
 ```powershell
+python src/main.py serve-demo --check
 python src/main.py serve-demo
 ```
 
 The demo server uses `demo_runtime/` only, serves the `demo` profile, disables background refresh jobs, and blocks write/import/refresh actions. It does not use real `data/`.
+
+### Profile Defaults
+
+Normal/private mode currently uses local runtime profiles such as `son` and `mom`. These are private local profiles created under `data/`; they are not demo data and should not be committed.
+
+Public users should start with the synthetic demo flow first. Demo mode uses only the `demo` profile from `demo_runtime/`. Future work may make normal/private profiles fully configurable.
 
 ## What Currently Works
 
@@ -131,6 +138,7 @@ Demo server:
 ```powershell
 python scripts/create_demo_data.py
 python scripts/prepare_demo_runtime.py --reset
+python src/main.py serve-demo --check
 python src/main.py serve-demo
 ```
 
