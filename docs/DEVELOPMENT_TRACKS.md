@@ -38,6 +38,10 @@ The desktop framework should be designed around:
 
 For the planning baseline, see [Desktop Data Architecture](DESKTOP_DATA_ARCHITECTURE.md).
 
+The first implementation step is a demo-only embedded desktop server harness that can wrap the current Flask app for a future shell. It is not a desktop window, installer, or packaged app yet.
+
+For the shell/container boundary, see [Desktop Shell Interface](DESKTOP_SHELL_INTERFACE.md).
+
 The desktop app should start with demo data, not private account data. Real local profiles such as `son` or `mom` should only be migrated after:
 
 - Local backups.
