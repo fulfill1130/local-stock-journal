@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import socket
 import time
 from datetime import date, datetime
 from pathlib import Path
@@ -64,6 +65,75 @@ def add_profile_argument(parser: argparse.ArgumentParser) -> None:
         default=DEFAULT_PROFILE,
         help="Profile to update. Default: son",
     )
+
+
+def _unique_hosts(hosts: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for host in hosts:
+        if host not in seen:
+            seen.add(host)
+            result.append(host)
+    return result
+
+
+def _preflight_hosts(host: str) -> list[str]:
+    normalized = (host or "127.0.0.1").strip()
+    if normalized == "localhost":
+        normalized = "127.0.0.1"
+    if normalized in {"0.0.0.0", ""}:
+        return ["127.0.0.1", "0.0.0.0"]
+    if normalized == "127.0.0.1":
+        return ["127.0.0.1", "0.0.0.0"]
+    return [normalized]
+
+
+def _can_connect(host: str, port: int) -> bool:
+    connect_host = "127.0.0.1" if host in {"0.0.0.0", ""} else host
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.25)
+            return sock.connect_ex((connect_host, int(port))) == 0
+    except OSError:
+        return False
+
+
+def preflight_port_available(host: str, port: int) -> tuple[bool, str]:
+    for candidate in _preflight_hosts(host):
+        if _can_connect(candidate, port):
+            return (
+                False,
+                f"Port {port} appears to be in use for {host}. "
+                "Stop the existing server or choose a different --port.",
+            )
+    for candidate in _preflight_hosts(host):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+                sock.bind((candidate, int(port)))
+        except OSError:
+            return (
+                False,
+                f"Port {port} appears to be occupied for {host}. "
+                "Stop the existing server or choose a different --port.",
+            )
+    return True, ""
+
+
+def print_startup_runtime_info(
+    project_root: Path,
+    runtime_root: Path,
+    demo_mode: bool,
+    host: str,
+    port: int,
+) -> None:
+    root_label = "runtime_root" if demo_mode else "data_root"
+    print(f"project_root={project_root.resolve()}")
+    print(f"{root_label}={runtime_root.resolve()}")
+    print(f"demo_mode={str(bool(demo_mode)).lower()}")
+    print(f"host={host}")
+    print(f"port={port}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -323,6 +393,13 @@ def run_cli(project_root: Path, argv: list[str] | None = None) -> int:
         except DemoRuntimeError as exc:
             print(str(exc))
             return 2
+        host = getattr(args, "host", "127.0.0.1")
+        port = getattr(args, "port", 8787)
+        if not getattr(args, "check", False):
+            port_ok, port_message = preflight_port_available(host, port)
+            if not port_ok:
+                print(port_message)
+                return 2
         app = create_app(
             project_root,
             share_token=getattr(args, "share_token", ""),
@@ -330,10 +407,8 @@ def run_cli(project_root: Path, argv: list[str] | None = None) -> int:
             runtime_root=demo_runtime,
             demo_mode=True,
         )
-        host = getattr(args, "host", "127.0.0.1")
-        port = getattr(args, "port", 8787)
         print(f"Demo Dashboard: http://{host}:{port}/demo")
-        print(f"Demo runtime: {demo_runtime}")
+        print_startup_runtime_info(project_root, demo_runtime, True, host, port)
         if getattr(args, "check", False):
             return 0
         app.run(host=host, port=port, debug=getattr(args, "debug", False))
@@ -355,15 +430,20 @@ def run_cli(project_root: Path, argv: list[str] | None = None) -> int:
         return 0
 
     if args.command in (None, "serve"):
+        host = getattr(args, "host", "127.0.0.1")
+        port = getattr(args, "port", 8787)
+        debug = getattr(args, "debug", False)
+        port_ok, port_message = preflight_port_available(host, port)
+        if not port_ok:
+            print(port_message)
+            return 2
         app = create_app(
             project_root,
             share_token=getattr(args, "share_token", ""),
             refresh_on_start=getattr(args, "refresh_on_start", False),
         )
-        host = getattr(args, "host", "127.0.0.1")
-        port = getattr(args, "port", 8787)
-        debug = getattr(args, "debug", False)
         print(f"Dashboard: http://{host}:{port}")
+        print_startup_runtime_info(project_root, project_root / "data", False, host, port)
         app.run(host=host, port=port, debug=debug)
         return 0
 

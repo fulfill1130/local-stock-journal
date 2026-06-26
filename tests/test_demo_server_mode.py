@@ -30,7 +30,7 @@ class DemoServerModeTests(unittest.TestCase):
         warnings.filterwarnings("ignore", category=ResourceWarning)
 
     def test_demo_runtime_validation_rejects_missing_directory(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             missing = Path(tmp) / "demo_runtime"
             with self.assertRaises(DemoRuntimeError) as ctx:
                 validate_demo_runtime(ROOT, missing)
@@ -99,7 +99,7 @@ class DemoServerModeTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 403)
 
     def test_serve_demo_check_command_rejects_bad_runtime_and_accepts_prepared_runtime(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             bad_runtime = Path(tmp) / "demo_runtime"
             bad_runtime.mkdir()
             output = io.StringIO()

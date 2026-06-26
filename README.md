@@ -144,6 +144,18 @@ Server:
 python src/main.py serve
 ```
 
+Local development server safety:
+
+- Run only one dashboard server per port.
+- For phone testing on the same network, use:
+
+```powershell
+python src/main.py serve --host 0.0.0.0 --port 8787
+```
+
+- Do not run `127.0.0.1:8787` and `0.0.0.0:8787` servers at the same time.
+- Use `GET /api/runtime-info` to confirm the active `project_root`, `data_root`/`runtime_root`, and mode.
+
 Demo server:
 
 ```powershell

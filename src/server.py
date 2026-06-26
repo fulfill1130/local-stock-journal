@@ -134,7 +134,10 @@ def create_app(
         static_folder=str(project_root / "src" / "static"),
     )
     app.config["DEMO_MODE"] = demo_mode
+    app.config["PROJECT_ROOT"] = str(project_root.resolve())
+    app.config["DATA_ROOT"] = str(data_root.resolve())
     app.config["RUNTIME_ROOT"] = str(data_root)
+    app.config["APP_MODE"] = "demo" if demo_mode else "normal"
     if not demo_mode:
         ensure_profile_files(project_root)
     central_db_path = data_root / "market_data"
@@ -1779,6 +1782,20 @@ def create_app(
     @app.get("/health")
     def health():
         return {"ok": True}
+
+    @app.get("/api/runtime-info")
+    def runtime_info():
+        return jsonify(
+            {
+                "ok": True,
+                "project_root": app.config["PROJECT_ROOT"],
+                "data_root": app.config["DATA_ROOT"],
+                "runtime_root": app.config["DATA_ROOT"],
+                "demo_mode": bool(app.config["DEMO_MODE"]),
+                "app_mode": app.config["APP_MODE"],
+                "available_profiles": sorted(profiles),
+            }
+        )
 
     app.jinja_env.filters["money"] = fmt_money
     app.jinja_env.filters["pct"] = fmt_pct
