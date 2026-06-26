@@ -29,6 +29,8 @@ This project is **not investment advice**. It cannot place trades, does not conn
 
 See [Security and Privacy](docs/SECURITY_AND_PRIVACY.md) and [Disclaimer](docs/DISCLAIMER.md).
 
+For development notes and project direction, see [Developer Log](DEVLOG.md).
+
 ## Local Data Ownership
 
 Runtime data is intended to stay on the user's machine. Local directories such as `data/`, `profiles/`, `uploads/`, `output/`, and `backups/` are ignored by Git because they may contain private holdings, documents, market caches, and logs.
