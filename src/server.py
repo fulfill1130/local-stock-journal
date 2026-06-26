@@ -4,6 +4,7 @@ import json
 import base64
 import hashlib
 import mimetypes
+import sqlite3
 import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -15,6 +16,7 @@ from werkzeug.utils import secure_filename
 
 from analyzer import build_dashboard_state
 from central_store import (
+    SEGMENT_FILES,
     add_split_action,
     apply_daily_quote_fallbacks,
     begin_update_status,
@@ -674,6 +676,18 @@ def create_app(
     @app.get("/database/uploads")
     def database_uploads_index():
         return render_template("uploads.html", profiles=profile_links(profiles))
+
+    @app.get("/api/market-data-status")
+    def api_market_data_status():
+        return jsonify(
+            market_data_status_payload(
+                data_root=data_root,
+                central_db_path=central_db_path,
+                quote_cache_path=quote_cache_path,
+                refresh_log_path=refresh_log_path,
+                demo_mode=demo_mode,
+            )
+        )
 
     @app.get("/api/database")
     def api_database():
@@ -2641,6 +2655,402 @@ def database_payload(
             "missing_quote_count": len(all_matching) - quote_count,
         },
         "instruments": instruments,
+    }
+
+
+def market_data_status_payload(
+    *,
+    data_root: Path,
+    central_db_path: Path,
+    quote_cache_path: Path,
+    refresh_log_path: Path,
+    demo_mode: bool = False,
+) -> dict[str, Any]:
+    segment_rows = [_read_market_segment_status(central_db_path, segment, filename) for segment, filename in SEGMENT_FILES.items()]
+    official_daily = _official_daily_status_from_segments(segment_rows, demo_mode)
+    quote_cache = _quote_cache_status(quote_cache_path)
+    quote_tables = _combined_table_status(segment_rows, "quotes")
+    return {
+        "ok": True,
+        "demo_mode": bool(demo_mode),
+        "runtime_root": str(data_root.resolve()),
+        "data_root": str(data_root.resolve()),
+        "generated_at": now_string(),
+        "updated_at": now_string(),
+        "official_daily": official_daily,
+        "ohlcv": {
+            "updated_through": _max_text(row["ohlcv"]["last_date"] for row in segment_rows),
+            "first_date": _min_text(row["ohlcv"]["first_date"] for row in segment_rows),
+            "row_count": sum(row["ohlcv"]["row_count"] for row in segment_rows),
+            "segments": {row["segment"]: row["ohlcv"] for row in segment_rows},
+        },
+        "quotes": {
+            "latest_cache_timestamp": quote_cache["latest_timestamp"],
+            "cache_count": quote_cache["count"],
+            "cache_status_counts": quote_cache["status_counts"],
+            "latest_table_date": quote_tables["max_quote_date"],
+            "latest_table_updated_at": quote_tables["max_updated_at"],
+            "table_row_count": quote_tables["row_count"],
+            "segments": {row["segment"]: row["quotes"] for row in segment_rows},
+        },
+        "after_close": _combined_table_status(segment_rows, "after_close"),
+        "dividends": _combined_table_status(segment_rows, "dividends"),
+        "health": _combined_health_status(segment_rows),
+        "recent_refresh_log": _recent_refresh_log(refresh_log_path),
+    }
+
+
+def _read_market_segment_status(root: Path, segment: str, filename: str) -> dict[str, Any]:
+    db_path = root / filename
+    status: dict[str, Any] = {
+        "segment": segment,
+        "database": filename,
+        "exists": db_path.exists(),
+        "ohlcv": _empty_ohlcv_status(),
+        "quotes": _empty_quotes_status(),
+        "after_close": _empty_after_close_status(),
+        "dividends": _empty_dividends_status(),
+        "health": _empty_health_status(),
+        "update_status": {},
+    }
+    if not db_path.exists():
+        return status
+    try:
+        with _connect_sqlite_readonly(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            status["ohlcv"] = _read_ohlcv_status(conn)
+            status["quotes"] = _read_quotes_status(conn)
+            status["after_close"] = _read_after_close_status(conn)
+            status["dividends"] = _read_dividends_status(conn)
+            status["health"] = _read_health_status(conn)
+            status["update_status"] = _read_update_status_rows(conn)
+    except sqlite3.Error as exc:
+        status["error"] = str(exc)
+    return status
+
+
+def _connect_sqlite_readonly(path: Path) -> sqlite3.Connection:
+    return sqlite3.connect(f"file:{path.resolve().as_posix()}?mode=ro", uri=True)
+
+
+def _table_exists_readonly(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
+def _read_ohlcv_status(conn: sqlite3.Connection) -> dict[str, Any]:
+    if not _table_exists_readonly(conn, "ohlcv_daily"):
+        return _empty_ohlcv_status()
+    row = conn.execute(
+        "SELECT COUNT(*) AS row_count, MIN(date) AS first_date, MAX(date) AS last_date FROM ohlcv_daily"
+    ).fetchone()
+    return {
+        "row_count": int(row["row_count"] or 0),
+        "first_date": row["first_date"],
+        "last_date": row["last_date"],
+    }
+
+
+def _read_quotes_status(conn: sqlite3.Connection) -> dict[str, Any]:
+    if not _table_exists_readonly(conn, "quotes"):
+        return _empty_quotes_status()
+    row = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS row_count,
+            MAX(quote_date) AS max_quote_date,
+            MAX(quote_time) AS max_quote_time,
+            MAX(updated_at) AS max_updated_at
+        FROM quotes
+        """
+    ).fetchone()
+    return {
+        "row_count": int(row["row_count"] or 0),
+        "max_quote_date": row["max_quote_date"],
+        "max_quote_time": row["max_quote_time"],
+        "max_updated_at": row["max_updated_at"],
+    }
+
+
+def _read_after_close_status(conn: sqlite3.Connection) -> dict[str, Any]:
+    if not _table_exists_readonly(conn, "after_close_quotes"):
+        return _empty_after_close_status()
+    row = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS row_count,
+            MAX(quote_date) AS max_quote_date,
+            MAX(created_at) AS max_created_at
+        FROM after_close_quotes
+        """
+    ).fetchone()
+    return {
+        "row_count": int(row["row_count"] or 0),
+        "max_quote_date": row["max_quote_date"],
+        "max_created_at": row["max_created_at"],
+    }
+
+
+def _read_dividends_status(conn: sqlite3.Connection) -> dict[str, Any]:
+    if not _table_exists_readonly(conn, "etf_dividends"):
+        return _empty_dividends_status()
+    row = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS row_count,
+            MAX(ex_dividend_date) AS max_ex_dividend_date,
+            MAX(payout_date) AS max_payout_date
+        FROM etf_dividends
+        """
+    ).fetchone()
+    return {
+        "row_count": int(row["row_count"] or 0),
+        "max_ex_dividend_date": row["max_ex_dividend_date"],
+        "max_payout_date": row["max_payout_date"],
+    }
+
+
+def _read_health_status(conn: sqlite3.Connection) -> dict[str, Any]:
+    if not _table_exists_readonly(conn, "instrument_health_summary"):
+        return _empty_health_status()
+    rows = conn.execute(
+        """
+        SELECT
+            COALESCE(history_status, '') AS history_status,
+            COUNT(*) AS count,
+            MAX(last_daily_date) AS max_last_daily_date,
+            MAX(last_checked_at) AS max_last_checked_at,
+            MAX(last_success_at) AS max_last_success_at
+        FROM instrument_health_summary
+        GROUP BY COALESCE(history_status, '')
+        """
+    ).fetchall()
+    status_counts = {str(row["history_status"] or "unknown"): int(row["count"] or 0) for row in rows}
+    return {
+        "instrument_count": sum(status_counts.values()),
+        "status_counts": status_counts,
+        "max_last_daily_date": _max_text(row["max_last_daily_date"] for row in rows),
+        "max_last_checked_at": _max_text(row["max_last_checked_at"] for row in rows),
+        "max_last_success_at": _max_text(row["max_last_success_at"] for row in rows),
+    }
+
+
+def _read_update_status_rows(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
+    if not _table_exists_readonly(conn, "update_status"):
+        return {}
+    rows = conn.execute(
+        """
+        SELECT
+            job_name,
+            source,
+            last_started_at,
+            last_finished_at,
+            next_run_at,
+            last_status,
+            success_count,
+            fail_count,
+            message
+        FROM update_status
+        """
+    ).fetchall()
+    return {str(row["job_name"] or ""): dict(row) for row in rows}
+
+
+def _official_daily_status_from_segments(segment_rows: list[dict[str, Any]], demo_mode: bool) -> dict[str, Any]:
+    rows = [
+        row["update_status"]["official_daily"]
+        for row in segment_rows
+        if row.get("update_status", {}).get("official_daily")
+    ]
+    if rows:
+        latest = max(rows, key=lambda row: str(row.get("last_started_at") or row.get("last_finished_at") or ""))
+        return {
+            "job_name": "official_daily",
+            "source": latest.get("source", ""),
+            "status": latest.get("last_status", ""),
+            "last_started_at": latest.get("last_started_at", ""),
+            "last_finished_at": latest.get("last_finished_at", ""),
+            "next_run_at": latest.get("next_run_at", ""),
+            "success_count": latest.get("success_count", 0),
+            "fail_count": latest.get("fail_count", 0),
+            "message": _safe_status_message("official_daily", latest.get("message", "")),
+        }
+    if demo_mode:
+        return {
+            "job_name": "official_daily",
+            "source": "synthetic_demo",
+            "status": "local_fixture",
+            "last_started_at": "",
+            "last_finished_at": "",
+            "next_run_at": "",
+            "success_count": 0,
+            "fail_count": 0,
+            "message": "Demo mode uses local synthetic fixture market data; refresh is disabled.",
+        }
+    return {
+        "job_name": "official_daily",
+        "source": "",
+        "status": "unknown",
+        "last_started_at": "",
+        "last_finished_at": "",
+        "next_run_at": "",
+        "success_count": 0,
+        "fail_count": 0,
+        "message": "No official daily update status is available.",
+    }
+
+
+def _quote_cache_status(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {"exists": False, "count": 0, "latest_timestamp": None, "status_counts": {}}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"exists": True, "count": 0, "latest_timestamp": None, "status_counts": {}, "error": "unreadable"}
+    if not isinstance(payload, dict):
+        return {"exists": True, "count": 0, "latest_timestamp": None, "status_counts": {}}
+    timestamps: list[str] = []
+    status_counts: dict[str, int] = {}
+    for item in payload.values():
+        if not isinstance(item, dict):
+            continue
+        status = str(item.get("status") or "unknown")
+        status_counts[status] = status_counts.get(status, 0) + 1
+        timestamp = _quote_cache_timestamp(item)
+        if timestamp:
+            timestamps.append(timestamp)
+    return {
+        "exists": True,
+        "count": len(payload),
+        "latest_timestamp": _max_text(timestamps),
+        "status_counts": status_counts,
+    }
+
+
+def _quote_cache_timestamp(item: dict[str, Any]) -> str:
+    fetched_at_ts = item.get("fetched_at_ts")
+    if fetched_at_ts not in (None, ""):
+        try:
+            return datetime.fromtimestamp(float(fetched_at_ts)).astimezone().isoformat(timespec="seconds")
+        except (TypeError, ValueError, OSError):
+            pass
+    return _max_text(str(item.get(key) or "").strip() for key in ("fetched_at", "price_time")) or ""
+
+
+def _recent_refresh_log(path: Path, limit: int = 10) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(payload, list):
+        return []
+    rows = []
+    for row in payload[-limit:]:
+        if not isinstance(row, dict):
+            continue
+        source = str(row.get("source") or "")
+        rows.append(
+            {
+                "time": row.get("time", ""),
+                "source": source,
+                "status": row.get("status", ""),
+                "message": _safe_status_message(source, row.get("message", "")),
+            }
+        )
+    return rows
+
+
+def _safe_status_message(source: str, message: Any) -> str:
+    text = str(message or "")
+    source_text = str(source or "").lower()
+    lowered = text.lower()
+    if "gmail" in source_text:
+        return "Gmail refresh details redacted."
+    sensitive_markers = ("credential", "token", "password", "secret", "authorization", "bearer")
+    if any(marker in lowered for marker in sensitive_markers):
+        return "Refresh details redacted."
+    return text[:500]
+
+
+def _combined_table_status(segment_rows: list[dict[str, Any]], key: str) -> dict[str, Any]:
+    rows = [row[key] for row in segment_rows]
+    if key == "quotes":
+        return {
+            "row_count": sum(row["row_count"] for row in rows),
+            "max_quote_date": _max_text(row["max_quote_date"] for row in rows),
+            "max_quote_time": _max_text(row["max_quote_time"] for row in rows),
+            "max_updated_at": _max_text(row["max_updated_at"] for row in rows),
+        }
+    if key == "after_close":
+        return {
+            "row_count": sum(row["row_count"] for row in rows),
+            "max_quote_date": _max_text(row["max_quote_date"] for row in rows),
+            "max_created_at": _max_text(row["max_created_at"] for row in rows),
+            "segments": {row["segment"]: row["after_close"] for row in segment_rows},
+        }
+    if key == "dividends":
+        return {
+            "row_count": sum(row["row_count"] for row in rows),
+            "max_ex_dividend_date": _max_text(row["max_ex_dividend_date"] for row in rows),
+            "max_payout_date": _max_text(row["max_payout_date"] for row in rows),
+            "segments": {row["segment"]: row["dividends"] for row in segment_rows},
+        }
+    return {"row_count": 0}
+
+
+def _combined_health_status(segment_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    status_counts: dict[str, int] = {}
+    for row in segment_rows:
+        for status, count in row["health"]["status_counts"].items():
+            status_counts[status] = status_counts.get(status, 0) + int(count or 0)
+    return {
+        "instrument_count": sum(row["health"]["instrument_count"] for row in segment_rows),
+        "status_counts": status_counts,
+        "max_last_daily_date": _max_text(row["health"]["max_last_daily_date"] for row in segment_rows),
+        "max_last_checked_at": _max_text(row["health"]["max_last_checked_at"] for row in segment_rows),
+        "max_last_success_at": _max_text(row["health"]["max_last_success_at"] for row in segment_rows),
+        "segments": {row["segment"]: row["health"] for row in segment_rows},
+    }
+
+
+def _max_text(values: Any) -> str | None:
+    texts = [str(value) for value in values if value not in (None, "")]
+    return max(texts) if texts else None
+
+
+def _min_text(values: Any) -> str | None:
+    texts = [str(value) for value in values if value not in (None, "")]
+    return min(texts) if texts else None
+
+
+def _empty_ohlcv_status() -> dict[str, Any]:
+    return {"row_count": 0, "first_date": None, "last_date": None}
+
+
+def _empty_quotes_status() -> dict[str, Any]:
+    return {"row_count": 0, "max_quote_date": None, "max_quote_time": None, "max_updated_at": None}
+
+
+def _empty_after_close_status() -> dict[str, Any]:
+    return {"row_count": 0, "max_quote_date": None, "max_created_at": None}
+
+
+def _empty_dividends_status() -> dict[str, Any]:
+    return {"row_count": 0, "max_ex_dividend_date": None, "max_payout_date": None}
+
+
+def _empty_health_status() -> dict[str, Any]:
+    return {
+        "instrument_count": 0,
+        "status_counts": {},
+        "max_last_daily_date": None,
+        "max_last_checked_at": None,
+        "max_last_success_at": None,
     }
 
 
