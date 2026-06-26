@@ -94,6 +94,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Validate and create the demo app, then exit without starting the server.",
     )
 
+    desktop_demo = sub.add_parser("desktop-demo", help="Start the optional demo desktop shell")
+    desktop_demo.add_argument(
+        "--runtime",
+        type=Path,
+        default=None,
+        help="Demo runtime directory. Defaults to ./demo_runtime.",
+    )
+
     buy = sub.add_parser("buy", help="Record a buy and update holdings")
     buy.add_argument("ticker")
     buy.add_argument("shares", type=float)
@@ -329,6 +337,21 @@ def run_cli(project_root: Path, argv: list[str] | None = None) -> int:
         if getattr(args, "check", False):
             return 0
         app.run(host=host, port=port, debug=getattr(args, "debug", False))
+        return 0
+
+    if args.command == "desktop-demo":
+        try:
+            demo_runtime = validate_demo_runtime(project_root, args.runtime)
+        except DemoRuntimeError as exc:
+            print(str(exc))
+            return 2
+        try:
+            launch_desktop_demo(project_root, demo_runtime)
+        except ModuleNotFoundError as exc:
+            if exc.name == "webview" or "webview" in str(exc):
+                print(desktop_dependency_instructions())
+                return 2
+            raise
         return 0
 
     if args.command in (None, "serve"):
@@ -795,6 +818,32 @@ def run_cli(project_root: Path, argv: list[str] | None = None) -> int:
 
     parser.print_help()
     return 1
+
+
+def desktop_dependency_instructions() -> str:
+    return (
+        "Optional desktop dependency pywebview is not installed.\n"
+        "Install desktop dependencies with:\n"
+        "pip install -r requirements-desktop.txt\n"
+        "Normal web commands still work without pywebview:\n"
+        "python src/main.py serve-demo\n"
+        "python src/main.py serve"
+    )
+
+
+def launch_desktop_demo(project_root: Path, runtime_root: Path) -> None:
+    from desktop_shell import DesktopShellConfig
+    from pywebview_desktop_shell import PyWebviewDesktopShell
+
+    shell = PyWebviewDesktopShell(
+        DesktopShellConfig(
+            project_root=project_root,
+            runtime_root=runtime_root,
+            profile="demo",
+            demo_mode=True,
+        )
+    )
+    shell.open_main_window()
 
 
 def sync_official_name_if_generic(

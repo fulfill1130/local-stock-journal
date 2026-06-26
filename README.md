@@ -104,6 +104,13 @@ python src/main.py serve-demo
 
 The demo server uses `demo_runtime/` only, serves the `demo` profile, disables background refresh jobs, and blocks write/import/refresh actions. It does not use real `data/`.
 
+An optional desktop demo shell is available for local experiments. It is demo-only, requires optional desktop dependencies, and is not packaged as an `.exe` yet:
+
+```powershell
+pip install -r requirements-desktop.txt
+python src/main.py desktop-demo
+```
+
 ### Profile Defaults
 
 Normal/private mode currently uses local runtime profiles such as `son` and `mom`. These are private local profiles created under `data/`; they are not demo data and should not be committed.
@@ -144,6 +151,13 @@ python scripts/create_demo_data.py
 python scripts/prepare_demo_runtime.py --reset
 python src/main.py serve-demo --check
 python src/main.py serve-demo
+```
+
+Optional desktop demo shell:
+
+```powershell
+pip install -r requirements-desktop.txt
+python src/main.py desktop-demo
 ```
 
 Market database utilities:
