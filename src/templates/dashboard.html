@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ profile.label }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20260614-account-pages-1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20260627-import-staging-ui-1">
 </head>
 <body>
   <main class="shell">
@@ -260,6 +260,23 @@
       </div>
       <p id="import-status" class="muted trade-status"></p>
 
+      <div class="import-staging-panel">
+        <div class="import-staging-head">
+          <div>
+            <strong>匯入暫存審核</strong>
+            <p class="muted">只建立審核批次，不會寫入最終帳本。</p>
+          </div>
+          <button id="import-staging-refresh" class="icon-button compact-button" type="button" aria-label="重新讀取暫存批次">↻</button>
+        </div>
+        <div class="import-actions">
+          <button id="import-staging-submit" class="primary-button" type="button">送入暫存審核</button>
+          <span class="muted">需貼固定 JSON 格式</span>
+        </div>
+        <p id="import-staging-status" class="muted trade-status"></p>
+        <div id="import-staging-list" class="import-staging-list"></div>
+        <div id="import-staging-detail" class="import-staging-detail"></div>
+      </div>
+
       <div id="import-preview" class="import-preview"></div>
       <button id="import-submit" class="primary-button full-button hidden" type="button">確認寫入交易</button>
     </section>
@@ -267,7 +284,7 @@
   <script>
     window.DASHBOARD_PROFILE = {{ profile | tojson }};
   </script>
-  <script src="{{ url_for('static', filename='app.js') }}?v=20260614-account-pages-1"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=20260627-import-staging-ui-1"></script>
 </body>
 </html>
 

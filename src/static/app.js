@@ -6,6 +6,7 @@
   holdingDetailOpen: {},
   sparklineDays: 10,
   importRows: [],
+  importStagingBatches: [],
   editingTransactionId: "",
   transactionSearch: "",
   transactionActionFilter: "ALL",
@@ -1061,6 +1062,7 @@ async function submitTrade(event) {
 
 function openImportSheet() {
   el("import-sheet").classList.remove("hidden");
+  loadImportStagingBatches();
   el("import-text").focus();
 }
 
@@ -1078,6 +1080,8 @@ function clearImportSheet() {
   el("import-preview").innerHTML = "";
   el("import-submit").classList.add("hidden");
   el("import-status").textContent = "";
+  el("import-staging-status").textContent = "";
+  el("import-staging-detail").innerHTML = "";
 }
 
 async function previewImportImage() {
@@ -1583,6 +1587,124 @@ function renderImportPreview() {
   el("import-submit").classList.remove("hidden");
 }
 
+async function submitImportStaging() {
+  const status = el("import-staging-status");
+  const button = el("import-staging-submit");
+  const text = el("import-text").value.trim();
+  if (!text) {
+    status.textContent = "請先貼上固定格式 JSON。";
+    return;
+  }
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    status.textContent = "JSON 格式不正確，請先修正後再送入暫存審核。";
+    return;
+  }
+  button.disabled = true;
+  status.textContent = "建立暫存審核批次中...";
+  try {
+    const response = await fetch(apiPath("/api/import-staging"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+    const batch = { ...(data.batch || {}), rows: data.rows || [] };
+    status.textContent = `已建立暫存批次 ${batch.batch_id || ""}。尚未寫入最終帳本。`;
+    renderImportStagingDetail(batch);
+    await loadImportStagingBatches();
+  } catch (error) {
+    status.textContent = `暫存失敗：${error.message || error}`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function loadImportStagingBatches() {
+  const root = el("import-staging-list");
+  const status = el("import-staging-status");
+  root.innerHTML = `<div class="empty">讀取暫存批次中...</div>`;
+  try {
+    const response = await fetch(apiPath("/api/import-staging"));
+    const data = await response.json();
+    if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+    state.importStagingBatches = Array.isArray(data.batches) ? data.batches : [];
+    renderImportStagingList();
+  } catch (error) {
+    root.innerHTML = `<div class="empty warning-text">暫存批次讀取失敗：${escapeHtml(error.message || error)}</div>`;
+    if (!status.textContent) status.textContent = "無法讀取暫存審核批次。";
+  }
+}
+
+function renderImportStagingList() {
+  const root = el("import-staging-list");
+  const batches = state.importStagingBatches || [];
+  if (!batches.length) {
+    root.innerHTML = `<div class="empty">目前沒有匯入暫存批次。</div>`;
+    return;
+  }
+  root.innerHTML = batches.map((batch) => `
+    <button class="import-staging-batch" type="button" data-import-staging-batch="${escapeHtml(batch.batch_id || "")}">
+      <span>
+        <strong>${escapeHtml(batch.batch_id || "未命名批次")}</strong>
+        <small>${escapeHtml(batch.created_at || "")}</small>
+      </span>
+      <span>${escapeHtml(batch.row_count ?? 0)} 筆 · 警告 ${escapeHtml(batch.warning_count ?? 0)} · 錯誤 ${escapeHtml(batch.error_count ?? 0)}</span>
+    </button>
+  `).join("");
+}
+
+async function openImportStagingBatch(batchId) {
+  const status = el("import-staging-status");
+  status.textContent = "讀取暫存批次明細中...";
+  try {
+    const response = await fetch(apiPath(`/api/import-staging/${encodeURIComponent(batchId)}`));
+    const data = await response.json();
+    if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+    renderImportStagingDetail(data.batch || {});
+    status.textContent = `已載入暫存批次 ${batchId}。尚未寫入最終帳本。`;
+  } catch (error) {
+    status.textContent = `讀取批次失敗：${error.message || error}`;
+  }
+}
+
+function renderImportStagingDetail(batch) {
+  const root = el("import-staging-detail");
+  const rows = Array.isArray(batch.rows) ? batch.rows : [];
+  root.innerHTML = `
+    <div class="import-staging-detail-head">
+      <strong>批次 ${escapeHtml(batch.batch_id || "")}</strong>
+      <span class="muted">狀態 ${escapeHtml(batch.status || "draft")} · ${rows.length} 筆 · 只供審核</span>
+    </div>
+    ${rows.length ? rows.map(renderImportStagingRow).join("") : `<div class="empty">此批次沒有列資料。</div>`}
+  `;
+}
+
+function renderImportStagingRow(row) {
+  const normalized = row.normalized || {};
+  const warnings = Array.isArray(row.warnings) ? row.warnings : [];
+  const errors = Array.isArray(row.errors) ? row.errors : [];
+  const duplicates = Array.isArray(row.duplicate_candidates) ? row.duplicate_candidates : [];
+  return `
+    <div class="import-staging-row ${errors.length ? "has-error" : warnings.length ? "has-warning" : ""}">
+      <div class="import-staging-row-main">
+        <strong>${escapeHtml(normalized.action || row.kind || "")} ${escapeHtml(normalized.ticker || "")}</strong>
+        <span>${escapeHtml(normalized.date || "")}</span>
+        <span>股數 ${escapeHtml(normalized.shares ?? "")}</span>
+        <span>價格 ${escapeHtml(normalized.price ?? "")}</span>
+        <span>成交金額 ${escapeHtml(row.computed_amount ?? "--")}</span>
+        <span>差異 ${escapeHtml(row.amount_difference ?? "--")}</span>
+      </div>
+      ${errors.length ? `<div class="import-staging-messages error-text">${errors.map(escapeHtml).join("；")}</div>` : ""}
+      ${warnings.length ? `<div class="import-staging-messages warning-text">${warnings.map(escapeHtml).join("；")}</div>` : ""}
+      ${duplicates.length ? `<div class="import-staging-messages">疑似重複：${duplicates.map((item) => escapeHtml(item.id || item.date || item.ticker || "existing")).join("、")}</div>` : ""}
+    </div>
+  `;
+}
+
 function renderImportRow(row, index) {
   const duplicate = isImportRowDuplicate(row);
   return `
@@ -1747,7 +1869,14 @@ function setupTradeForm() {
   el("import-extract").addEventListener("click", extractSelectedImportFileText);
   el("import-extract-local").addEventListener("click", extractLatestLocalPdfText);
   el("import-parse").addEventListener("click", parseImportText);
+  el("import-staging-submit").addEventListener("click", submitImportStaging);
+  el("import-staging-refresh").addEventListener("click", loadImportStagingBatches);
   el("import-submit").addEventListener("click", submitImportRows);
+  el("import-staging-list").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-import-staging-batch]");
+    if (!button) return;
+    openImportStagingBatch(button.dataset.importStagingBatch);
+  });
   el("import-preview").addEventListener("click", (event) => {
     const button = event.target.closest("[data-remove-import-row]");
     if (!button) return;
