@@ -36,6 +36,8 @@ The desktop framework should be designed around:
 - Plugin safety and permission boundaries.
 - Demo/synthetic data as the first-run experience.
 
+For the planning baseline, see [Desktop Data Architecture](DESKTOP_DATA_ARCHITECTURE.md).
+
 The desktop app should start with demo data, not private account data. Real local profiles such as `son` or `mom` should only be migrated after:
 
 - Local backups.
