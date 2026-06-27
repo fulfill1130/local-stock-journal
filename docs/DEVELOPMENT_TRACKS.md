@@ -58,6 +58,7 @@ Shared contracts include:
 
 - Import staging JSON.
 - Plugin input/output JSON.
+- Corporate action notice and settlement schema. See [Corporate Actions Specification](CORPORATE_ACTIONS_SPEC.md).
 - Market data schema.
 - Account journal schema.
 - Backup and migration format.
