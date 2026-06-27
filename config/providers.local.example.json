@@ -16,6 +16,14 @@
         "type": "yuanta",
         "tickers": ["0050"],
         "url_template": "https://example.invalid/yuanta-etf/{ticker}/ratio"
+      },
+      {
+        "provider_id": "fubon_00900",
+        "display_name": "Fubon 00900 ETF holdings",
+        "issuer": "Fubon",
+        "type": "fubon",
+        "tickers": ["00900"],
+        "url_template": "https://example.invalid/fubon-etf/assets?stkId={ticker}"
       }
     ]
   }

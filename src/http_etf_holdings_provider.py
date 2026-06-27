@@ -11,6 +11,7 @@ from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from fubon_etf_holdings_provider import FubonEtfHoldingsProvider
 from market_data_types import ProviderIssue, ProviderResult
 from yuanta_etf_holdings_provider import YuantaEtfHoldingsProvider
 
@@ -279,6 +280,21 @@ def load_configured_http_etf_holdings_providers(
                     display_name=str(row.get("display_name") or row.get("name") or "").strip(),
                     issuer=str(row.get("issuer") or "Yuanta").strip() or "Yuanta",
                     fetcher=yuanta_fetcher,
+                )
+            )
+            continue
+        if provider_type == "fubon":
+            tickers = row.get("tickers") or row.get("supported_tickers") or ["00900"]
+            fubon_fetcher = (lambda url, timeout, _fetcher=fetcher: _fetcher(url, {}, timeout)) if fetcher else None
+            providers.append(
+                FubonEtfHoldingsProvider(
+                    provider_id=str(row.get("provider_id") or "fubon_etf_holdings").strip() or "fubon_etf_holdings",
+                    tickers=tuple(str(item) for item in tickers) if isinstance(tickers, list) else (str(tickers),),
+                    url_template=str(row.get("url_template") or "https://websys.fsit.com.tw/FubonETF/Fund/Assets.aspx?stkId={ticker}").strip(),
+                    timeout_seconds=float(row.get("timeout_seconds") or 15),
+                    display_name=str(row.get("display_name") or row.get("name") or "").strip(),
+                    issuer=str(row.get("issuer") or "Fubon").strip() or "Fubon",
+                    fetcher=fubon_fetcher,
                 )
             )
             continue

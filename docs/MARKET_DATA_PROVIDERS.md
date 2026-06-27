@@ -68,6 +68,8 @@ Source discovery found that Yahoo Finance is not a reliable Taiwan ETF holdings 
 
 `YuantaEtfHoldingsProvider` is the first issuer-specific provider candidate for Yuanta ETFs such as 0050 and 0056. It parses the public Yuanta ETF ratio page's stock-weight table into the existing ETF holdings snapshot shape. No stable CSV/export endpoint has been wired yet; the parser is therefore conservative HTML parsing and should be treated as fragile issuer-page integration.
 
+`FubonEtfHoldingsProvider` is an issuer-specific manual-trigger provider for Fubon ETF fund assets pages, initially tested with 00900. It parses the stock holdings table into ETF components and ignores non-stock asset rows such as futures, cash, margin, and payable items as components. Those non-stock rows may be summarized in notes only. The source is an official issuer fund assets page, but the parser is still HTML-based and should be reviewed before confirmation.
+
 Private live provider settings belong only in ignored local configuration:
 
 ```text
@@ -115,6 +117,24 @@ Yuanta manual-trigger example:
         "provider_id": "yuanta_etf_holdings",
         "type": "yuanta",
         "tickers": ["0050", "0056"]
+      }
+    ]
+  }
+}
+```
+
+Fubon manual-trigger example:
+
+```json
+{
+  "etf_holdings": {
+    "providers": [
+      {
+        "provider_id": "fubon_00900",
+        "display_name": "Fubon 00900 ETF holdings",
+        "issuer": "Fubon",
+        "type": "fubon",
+        "tickers": ["00900"]
       }
     ]
   }

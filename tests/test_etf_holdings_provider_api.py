@@ -219,6 +219,46 @@ class EtfHoldingsProviderApiTests(unittest.TestCase):
         self.assertEqual(payload["components"][0]["constituent_ticker"], "2330")
         self.assertEqual(_snapshot_count(self.market_root), 0)
 
+    def test_fubon_provider_config_previews_without_writing(self) -> None:
+        self._write_fubon_provider_config()
+        with patch("fubon_etf_holdings_provider.urlopen", return_value=_FakeResponse(_fubon_fixture())):
+            response = self.client.post(
+                "/api/database/etf-holdings/fetch-provider",
+                json={"ticker": "00900", "provider_id": "fubon_test", "confirm": False},
+            )
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["imported"])
+        self.assertEqual(payload["provider"]["provider_id"], "fubon_test")
+        self.assertEqual(payload["snapshot"]["as_of_date"], "2026-06-26")
+        self.assertEqual(payload["snapshot"]["source"], "fubon_assets_html")
+        self.assertEqual(payload["components"][0]["constituent_ticker"], "2303")
+        self.assertEqual(payload["components"][0]["shares"], 19558000)
+        self.assertEqual(payload["components"][0]["market_value"], 3207512000)
+        self.assertEqual(_snapshot_count(self.market_root), 0)
+
+    def test_fubon_provider_list_returns_safe_metadata_without_url_leak(self) -> None:
+        self._write_fubon_provider_config(
+            url_template="https://private.example.invalid/fubon/{ticker}?token=SECRET_URL_TOKEN"
+        )
+
+        response = self.client.get("/api/database/etf-holdings/providers?ticker=00900")
+        response_text = response.get_data(as_text=True)
+        payload = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(payload["providers"]), 1)
+        self.assertEqual(payload["providers"][0]["provider_id"], "fubon_test")
+        self.assertEqual(payload["providers"][0]["display_name"], "Fubon 00900")
+        self.assertEqual(payload["providers"][0]["issuer"], "Fubon")
+        self.assertEqual(payload["providers"][0]["type"], "fubon")
+        self.assertEqual(payload["providers"][0]["status"], "available")
+        self.assertNotIn("url", payload["providers"][0])
+        self.assertNotIn("SECRET_URL_TOKEN", response_text)
+        self.assertNotIn("private.example.invalid", response_text)
+
     def _write_provider_config(self, *, url: str = "https://provider.invalid/{ticker}.csv") -> None:
         config_path = self.project_root / "config" / "providers.local.json"
         config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -300,10 +340,39 @@ class EtfHoldingsProviderApiTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def _write_fubon_provider_config(
+        self,
+        *,
+        url_template: str = "https://provider.invalid/fubon/{ticker}",
+    ) -> None:
+        config_path = self.project_root / "config" / "providers.local.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            json.dumps(
+                {
+                    "etf_holdings": {
+                        "providers": [
+                            {
+                                "provider_id": "fubon_test",
+                                "display_name": "Fubon 00900",
+                                "issuer": "Fubon",
+                                "type": "fubon",
+                                "tickers": ["00900"],
+                                "url_template": url_template,
+                            }
+                        ]
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
 
 class _FakeResponse:
     def __init__(self, text: str):
         self.text = text
+        self.headers = _FakeHeaders()
 
     def __enter__(self) -> _FakeResponse:
         return self
@@ -313,6 +382,11 @@ class _FakeResponse:
 
     def read(self) -> bytes:
         return self.text.encode("utf-8")
+
+
+class _FakeHeaders:
+    def get_content_charset(self) -> str:
+        return "utf-8"
 
 
 def _valid_csv() -> str:
@@ -338,6 +412,30 @@ def _yuanta_fixture() -> str:
           <div class="td"><span>商品權重</span> <span>57.72</span></div>
         </div>
       </div>
+    </body></html>
+    """
+
+
+def _fubon_fixture() -> str:
+    return """
+    <html><body>
+      <h1>00900 Fubon sample ETF</h1>
+      <div>資料日期：2026/06/26</div>
+      <table>
+        <tr><th>期貨代碼</th><th>期貨名稱</th><th>口數</th><th>金額</th><th>權重(%)</th></tr>
+        <tr><td>WTXN6F</td><td>Sample future</td><td>58</td><td>515,643,200</td><td>1.6369</td></tr>
+        <tr><td>期貨合計</td><td></td><td></td><td>515,643,200</td><td>1.6369</td></tr>
+      </table>
+      <table>
+        <tr><th>股票代碼</th><th>股票名稱</th><th>股數</th><th>金額</th><th>權重(%)</th></tr>
+        <tr><td>2303</td><td>聯電</td><td>19,558,000</td><td>3,207,512,000</td><td>10.1825</td></tr>
+        <tr><td>2454</td><td>聯發科</td><td>742,000</td><td>2,878,960,000</td><td>9.1394</td></tr>
+        <tr><td>股票合計</td><td></td><td></td><td>6,086,472,000</td><td>19.3219</td></tr>
+      </table>
+      <table>
+        <tr><th>項目</th><th>金額</th></tr>
+        <tr><td>現金 (TWD)</td><td>141,734,871</td></tr>
+      </table>
     </body></html>
     """
 
