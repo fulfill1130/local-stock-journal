@@ -51,24 +51,48 @@ class FakeHistoryProvider:
         )
 
 
+class FakeEtfHoldingsProvider:
+    provider_id = "fake_etf_holdings"
+
+    def supports(self, ticker: str) -> bool:
+        return ticker == "DEMOA"
+
+    def load(self, ticker: str) -> ProviderResult[dict]:
+        return ProviderResult(provider_id=self.provider_id, items=({"etf_ticker": ticker, "components": []},))
+
+    def parse(self, raw):
+        return raw
+
+    def normalize(self, parsed) -> dict:
+        return dict(parsed)
+
+    def validate(self, snapshot: dict) -> tuple:
+        return ()
+
+
 class ProviderRegistryTests(unittest.TestCase):
     def test_registers_providers_by_capability(self) -> None:
         registry = ProviderRegistry()
         quote_provider = FakeQuoteProvider()
         history_provider = FakeHistoryProvider()
+        etf_holdings_provider = FakeEtfHoldingsProvider()
 
         registry.register_quote_provider(quote_provider)
         registry.register_history_provider(history_provider)
+        registry.register_etf_holdings_provider(etf_holdings_provider)
 
         self.assertEqual(registry.providers_for("quotes"), ["fake_quotes"])
         self.assertEqual(registry.providers_for("history"), ["fake_history"])
+        self.assertEqual(registry.providers_for("etf_holdings"), ["fake_etf_holdings"])
         self.assertIs(registry.quote_provider("fake_quotes"), quote_provider)
         self.assertIs(registry.history_provider("fake_history"), history_provider)
+        self.assertIs(registry.etf_holdings_provider("fake_etf_holdings"), etf_holdings_provider)
 
     def test_finds_providers_that_support_an_instrument(self) -> None:
         registry = ProviderRegistry()
         registry.register_quote_provider(FakeQuoteProvider())
         registry.register_history_provider(FakeHistoryProvider())
+        registry.register_etf_holdings_provider(FakeEtfHoldingsProvider())
 
         self.assertEqual(
             [provider.provider_id for provider in registry.quote_providers_for_instrument("TWSE:2330")],
@@ -86,6 +110,11 @@ class ProviderRegistryTests(unittest.TestCase):
             [provider.provider_id for provider in registry.history_providers_for_instrument("TWSE:2330", "1m")],
             [],
         )
+        self.assertEqual(
+            [provider.provider_id for provider in registry.etf_holdings_providers_for_ticker("DEMOA")],
+            ["fake_etf_holdings"],
+        )
+        self.assertEqual(registry.etf_holdings_providers_for_ticker("DEMOB"), [])
 
     def test_rejects_blank_provider_ids(self) -> None:
         class BlankQuoteProvider(FakeQuoteProvider):

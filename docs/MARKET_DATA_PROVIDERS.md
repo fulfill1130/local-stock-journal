@@ -54,6 +54,12 @@ bars = provider.get_daily_bars("SAMPLE:AAA", date(2026, 1, 1), date(2026, 1, 31)
 
 The sample CSV files are synthetic. They are not broker records, account records, official exchange data, or redistributable market data.
 
+## ETF Holdings Providers
+
+ETF holdings providers load, parse, normalize, and validate holdings snapshots only. They do not write SQLite directly; callers must persist accepted snapshots through the existing ETF holdings storage helper.
+
+`LocalCsvEtfHoldingsProvider` reads the synthetic `sample_data/market/etf_holdings.csv` format for offline tests and demos. Live ETF holdings providers are future work and should keep private configuration, caches, credentials, and raw provider responses local and ignored.
+
 ## yfinance Adapter Status
 
 `YFinanceQuoteProvider` is a thin adapter around the existing yfinance quote behavior in `market.py`.
@@ -76,4 +82,3 @@ The framework should be useful without API keys, network access, or paid data su
 - Provider interface validation before integrating live sources.
 
 Live API providers can be added as optional adapters later. They must respect provider terms, rate limits, source quality, and market data redistribution restrictions.
-
