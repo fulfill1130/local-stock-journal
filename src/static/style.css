@@ -2921,6 +2921,149 @@ h2 {
   background: linear-gradient(90deg, #7cc4ff, #70e1c8);
 }
 
+.etf-import-panel {
+  margin-top: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.34);
+}
+
+.etf-import-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.etf-import-summary strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.etf-import-summary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.etf-import-body {
+  display: grid;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.etf-import-body label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.etf-import-body textarea,
+.etf-import-body input[type="text"],
+.etf-import-body input[type="url"] {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.36);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 10px 11px;
+}
+
+.etf-import-body textarea {
+  min-height: 132px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.etf-import-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.etf-import-checkbox {
+  min-height: 42px;
+  display: flex !important;
+  grid-auto-flow: column;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px !important;
+  padding: 9px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.22);
+}
+
+.etf-import-checkbox input {
+  width: 16px;
+  height: 16px;
+}
+
+.etf-import-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.etf-import-status,
+.etf-import-messages {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.etf-import-messages {
+  display: grid;
+  gap: 3px;
+}
+
+.etf-import-messages p {
+  margin: 0;
+}
+
+.etf-import-preview {
+  display: grid;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.etf-import-preview-metrics {
+  margin-top: 0;
+}
+
+.etf-import-preview-list {
+  display: grid;
+  gap: 6px;
+}
+
+.etf-import-preview-row {
+  display: grid;
+  grid-template-columns: minmax(70px, 0.7fr) minmax(0, 1.8fr) minmax(62px, auto);
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.26);
+  font-size: 12px;
+}
+
+.etf-import-preview-row strong,
+.etf-import-preview-row span {
+  overflow-wrap: anywhere;
+}
+
+.etf-import-preview-row small {
+  color: var(--source-official);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .kline-ma-legend {
   display: flex;
   flex-wrap: wrap;
@@ -3132,6 +3275,10 @@ h2 {
     grid-template-columns: 1fr;
   }
 
+  .etf-import-controls {
+    grid-template-columns: 1fr;
+  }
+
   .stock-detail-lot {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -3181,6 +3328,27 @@ h2 {
 
   .etf-holding-weight {
     grid-column: 2;
+    text-align: left;
+  }
+
+  .etf-import-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .etf-import-actions {
+    justify-content: stretch;
+  }
+
+  .etf-import-actions .icon-button {
+    flex: 1 1 140px;
+  }
+
+  .etf-import-preview-row {
+    grid-template-columns: 1fr;
+  }
+
+  .etf-import-preview-row small {
     text-align: left;
   }
 }
