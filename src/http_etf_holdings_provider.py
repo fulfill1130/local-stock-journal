@@ -12,6 +12,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from market_data_types import ProviderIssue, ProviderResult
+from yuanta_etf_holdings_provider import YuantaEtfHoldingsProvider
 
 
 HttpFetcher = Callable[[str, dict[str, str], float], str]
@@ -245,7 +246,7 @@ def load_configured_http_etf_holdings_providers(
     *,
     env: dict[str, str] | None = None,
     fetcher: HttpFetcher | None = None,
-) -> tuple[list[ConfiguredHttpEtfHoldingsProvider], tuple[ProviderIssue, ...]]:
+) -> tuple[list[Any], tuple[ProviderIssue, ...]]:
     env_map = env if env is not None else os.environ
     config_path = Path(project_root) / "config" / "providers.local.json"
     if not config_path.exists():
@@ -258,11 +259,25 @@ def load_configured_http_etf_holdings_providers(
     rows = payload.get("etf_holdings_providers")
     if rows is None:
         rows = payload.get("etf_holdings", {}).get("providers") if isinstance(payload.get("etf_holdings"), dict) else []
-    providers: list[ConfiguredHttpEtfHoldingsProvider] = []
+    providers: list[Any] = []
     for index, row in enumerate(rows or [], 1):
         if not isinstance(row, dict):
             continue
-        if str(row.get("type") or "http").strip().lower() not in {"http", "https"}:
+        provider_type = str(row.get("type") or "http").strip().lower()
+        if provider_type == "yuanta":
+            tickers = row.get("tickers") or row.get("supported_tickers") or ["0050", "0056"]
+            yuanta_fetcher = (lambda url, timeout, _fetcher=fetcher: _fetcher(url, {}, timeout)) if fetcher else None
+            providers.append(
+                YuantaEtfHoldingsProvider(
+                    provider_id=str(row.get("provider_id") or "yuanta_etf_holdings").strip() or "yuanta_etf_holdings",
+                    tickers=tuple(str(item) for item in tickers) if isinstance(tickers, list) else (str(tickers),),
+                    url_template=str(row.get("url_template") or "https://www.yuantaetfs.com/product/detail/{ticker}/ratio").strip(),
+                    timeout_seconds=float(row.get("timeout_seconds") or 15),
+                    fetcher=yuanta_fetcher,
+                )
+            )
+            continue
+        if provider_type not in {"http", "https"}:
             continue
         provider_id = str(row.get("provider_id") or f"http_etf_holdings_{index}").strip()
         endpoint_url = str(row.get("url") or "").strip()

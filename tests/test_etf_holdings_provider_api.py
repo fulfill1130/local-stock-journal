@@ -149,6 +149,23 @@ class EtfHoldingsProviderApiTests(unittest.TestCase):
         self.assertEqual(payload["errors"][0]["code"], "provider_config_missing")
         self.assertEqual(_snapshot_count(self.market_root), 0)
 
+    def test_yuanta_provider_config_previews_without_writing(self) -> None:
+        self._write_yuanta_provider_config()
+        with patch("yuanta_etf_holdings_provider.urlopen", return_value=_FakeResponse(_yuanta_fixture())):
+            response = self.client.post(
+                "/api/database/etf-holdings/fetch-provider",
+                json={"ticker": "0050", "provider_id": "yuanta_test", "confirm": False},
+            )
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["imported"])
+        self.assertEqual(payload["provider"]["provider_id"], "yuanta_test")
+        self.assertEqual(payload["snapshot"]["as_of_date"], "2026-06-26")
+        self.assertEqual(payload["components"][0]["constituent_ticker"], "2330")
+        self.assertEqual(_snapshot_count(self.market_root), 0)
+
     def _write_provider_config(self, *, url: str = "https://provider.invalid/{ticker}.csv") -> None:
         config_path = self.project_root / "config" / "providers.local.json"
         config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -166,6 +183,27 @@ class EtfHoldingsProviderApiTests(unittest.TestCase):
                                 "source": "fake_live_source",
                                 "public_source_url": "https://provider.example/holdings",
                                 "api_key_env": "ETF_TEST_SECRET",
+                            }
+                        ]
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+    def _write_yuanta_provider_config(self) -> None:
+        config_path = self.project_root / "config" / "providers.local.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            json.dumps(
+                {
+                    "etf_holdings": {
+                        "providers": [
+                            {
+                                "provider_id": "yuanta_test",
+                                "type": "yuanta",
+                                "tickers": ["0050"],
                             }
                         ]
                     }
@@ -198,6 +236,23 @@ def _valid_csv() -> str:
             "DEMOA,2026-04-16,DEMOY,Demo Component Y,40,800,40000,Demo Finance,2",
         ]
     )
+
+
+def _yuanta_fixture() -> str:
+    return """
+    <html><body>
+      <h3>基金權重-股票</h3>
+      <div>交易日期: <br>2026/06/26</div>
+      <div class="tbody">
+        <div class="tr">
+          <div class="td"><span>商品代碼</span> <span>2330</span></div>
+          <div class="td"><span>商品名稱</span> <span>台積電</span></div>
+          <div class="td"><span>商品數量</span> <span>520,512,559</span></div>
+          <div class="td"><span>商品權重</span> <span>57.72</span></div>
+        </div>
+      </div>
+    </body></html>
+    """
 
 
 def _snapshot_count(market_root: Path) -> int:

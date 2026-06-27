@@ -64,6 +64,10 @@ Manual ETF holdings CSV import is the first real input path for ETF component sn
 
 `ConfiguredHttpEtfHoldingsProvider` is a manual-trigger live provider foundation for optional local use. It is not wired into page-open loading, dashboard refresh, or any scheduler. The manual trigger endpoint previews provider output before confirmation and writes only accepted ETF holdings snapshots through the ETF holdings storage helper.
 
+Source discovery found that Yahoo Finance is not a reliable Taiwan ETF holdings source for this app: the JSON holdings endpoint requires Yahoo crumb/cookie state, and the Taiwan Yahoo holdings page is HTML-only, partial, and stale-prone. TWSE public/OpenAPI endpoints are useful for trading, quote, iNAV, and basic market data, but they do not appear to provide actual ETF component holdings with weights.
+
+`YuantaEtfHoldingsProvider` is the first issuer-specific provider candidate for Yuanta ETFs such as 0050 and 0056. It parses the public Yuanta ETF ratio page's stock-weight table into the existing ETF holdings snapshot shape. No stable CSV/export endpoint has been wired yet; the parser is therefore conservative HTML parsing and should be treated as fragile issuer-page integration.
+
 Private live provider settings belong only in ignored local configuration:
 
 ```text
@@ -91,6 +95,22 @@ Safe example shape:
 }
 ```
 
+Yuanta manual-trigger example:
+
+```json
+{
+  "etf_holdings": {
+    "providers": [
+      {
+        "provider_id": "yuanta_etf_holdings",
+        "type": "yuanta",
+        "tickers": ["0050", "0056"]
+      }
+    ]
+  }
+}
+```
+
 Do not commit API keys, authenticated URLs, cookies, private provider URLs, or raw provider responses. If raw response caching is explicitly enabled for local troubleshooting, cache files must stay under the ignored runtime path:
 
 ```text
@@ -98,6 +118,8 @@ data/provider_cache/etf_holdings/
 ```
 
 Scheduler refresh, page-open provider fetching, and broader live-provider automation remain future work until provider health, error handling, and source quality are stable.
+
+Manual CSV import remains the fallback path when issuer pages change, fields are missing, or provider terms/stability are unclear.
 
 ## yfinance Adapter Status
 
