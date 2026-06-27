@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -110,6 +111,17 @@ class YuantaEtfHoldingsProviderTests(unittest.TestCase):
         self.assertTrue(api_payload["ok"])
         self.assertEqual(api_payload["summary"]["component_count"], 2)
 
+    def test_default_fetch_uses_tls_context_without_network_fixture(self) -> None:
+        provider = YuantaEtfHoldingsProvider()
+        with patch("yuanta_etf_holdings_provider.urlopen", return_value=_FakeResponse(_yuanta_fixture())) as mocked:
+            raw = provider.fetch("0056")
+
+        self.assertIn("2026/06/26", raw)
+        self.assertIn("context", mocked.call_args.kwargs)
+        context = mocked.call_args.kwargs["context"]
+        self.assertTrue(context.check_hostname)
+        self.assertEqual(context.verify_mode, 2)
+
 
 def _yuanta_fixture(*, include_date: bool = True, include_rows: bool = True, weight: str = "57.72") -> str:
     date_html = '<div class="trandate">交易日期: <br>2026/06/26</div>' if include_date else ""
@@ -149,6 +161,20 @@ def _yuanta_fixture(*, include_date: bool = True, include_rows: bool = True, wei
       </body>
     </html>
     """
+
+
+class _FakeResponse:
+    def __init__(self, text: str):
+        self.text = text
+
+    def __enter__(self) -> "_FakeResponse":
+        return self
+
+    def __exit__(self, _exc_type: object, _exc: object, _traceback: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self.text.encode("utf-8")
 
 
 if __name__ == "__main__":

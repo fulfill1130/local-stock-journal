@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import html
 import re
+import ssl
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -217,7 +218,10 @@ class YuantaEtfHoldingsProvider:
 
 def _default_fetch(url: str, timeout_seconds: float) -> str:
     request = Request(url, headers={"User-Agent": "stock-daily-helper/yuanta-etf-holdings-manual"})
-    with urlopen(request, timeout=timeout_seconds) as response:
+    context = ssl.create_default_context()
+    if hasattr(ssl, "VERIFY_X509_STRICT"):
+        context.verify_flags &= ~ssl.VERIFY_X509_STRICT
+    with urlopen(request, timeout=timeout_seconds, context=context) as response:
         return response.read().decode("utf-8-sig")
 
 
