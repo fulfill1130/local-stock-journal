@@ -12,6 +12,7 @@ venv/
 .env.*
 !.env.example
 config/*.local.*
+config/providers.local.json
 config/*private*
 config/*secret*
 config/*credentials*
@@ -25,6 +26,7 @@ config/*token*
 
 # Local runtime data and private account records
 data/
+data/provider_cache/
 demo_runtime/
 profiles/
 uploads/

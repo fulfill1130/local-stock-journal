@@ -66,6 +66,7 @@ from import_staging import (
     load_import_staging_batch,
     summarize_import_staging_batch,
 )
+from http_etf_holdings_provider import load_configured_http_etf_holdings_providers
 from local_csv_etf_holdings_provider import normalize_etf_holdings_csv_text
 from market import (
     QuoteService,
@@ -1064,6 +1065,12 @@ def create_app(
     def api_database_etf_holdings_import_csv():
         payload = request.get_json(silent=True) or {}
         result, status_code = import_etf_holdings_csv_payload(central_db_path, payload)
+        return jsonify(result), status_code
+
+    @app.post("/api/database/etf-holdings/fetch-provider")
+    def api_database_etf_holdings_fetch_provider():
+        payload = request.get_json(silent=True) or {}
+        result, status_code = fetch_etf_holdings_provider_payload(project_root, central_db_path, payload)
         return jsonify(result), status_code
 
     @app.post("/api/database/<ticker>/history/check")
@@ -2784,6 +2791,196 @@ def import_etf_holdings_csv_payload(central_db_path: Path, payload: dict[str, An
     return response, 200
 
 
+def fetch_etf_holdings_provider_payload(project_root: Path, central_db_path: Path, payload: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    ticker = str(payload.get("ticker") or "").strip().upper()
+    confirm = bool(payload.get("confirm", False))
+    override = bool(payload.get("override", False))
+    provider_id = str(payload.get("provider_id") or "").strip()
+    if not ticker:
+        issue = {
+            "provider_id": provider_id or "configured_http_etf_holdings",
+            "code": "ticker_required",
+            "message": "ticker is required.",
+            "severity": "error",
+            "retryable": False,
+            "instrument_id": "",
+            "source": "local_config",
+        }
+        return _empty_etf_holdings_provider_response(ticker, confirm=confirm, issues=[issue], provider_id=provider_id), 400
+
+    providers, config_issues = load_configured_http_etf_holdings_providers(project_root)
+    if config_issues:
+        issues = [_safe_provider_issue(issue) for issue in config_issues]
+        return _empty_etf_holdings_provider_response(ticker, confirm=confirm, issues=issues, provider_id=provider_id), 400
+
+    provider = None
+    if provider_id:
+        provider = next((candidate for candidate in providers if candidate.provider_id == provider_id), None)
+        if provider is not None and not provider.supports(ticker):
+            issue = {
+                "provider_id": provider.provider_id,
+                "code": "provider_unsupported_ticker",
+                "message": "Configured ETF holdings provider does not support this ticker.",
+                "severity": "error",
+                "retryable": False,
+                "instrument_id": ticker,
+                "source": provider.source,
+            }
+            return _empty_etf_holdings_provider_response(ticker, confirm=confirm, issues=[issue], provider_id=provider.provider_id), 400
+    else:
+        provider = next((candidate for candidate in providers if candidate.supports(ticker)), None)
+
+    if provider is None:
+        issue = {
+            "provider_id": provider_id or "configured_http_etf_holdings",
+            "code": "provider_not_found",
+            "message": "No configured ETF holdings provider was found for this ticker.",
+            "severity": "error",
+            "retryable": False,
+            "instrument_id": ticker,
+            "source": "local_config",
+        }
+        return _empty_etf_holdings_provider_response(ticker, confirm=confirm, issues=[issue], provider_id=provider_id), 400
+
+    result = provider.load(ticker)
+    snapshot = dict(result.items[0]) if result.items else _empty_provider_snapshot(ticker=ticker, source=provider.source)
+    issues = [_safe_provider_issue(issue) for issue in result.issues]
+    if not result.items and not any(issue.get("severity") == "error" for issue in issues):
+        issues.append(
+            {
+                "provider_id": provider.provider_id,
+                "code": "provider_no_snapshot",
+                "message": "ETF holdings provider did not return a usable snapshot.",
+                "severity": "error",
+                "retryable": False,
+                "instrument_id": ticker,
+                "source": provider.source,
+            }
+        )
+    older_issue = _older_etf_snapshot_issue(
+        central_db_path,
+        snapshot,
+        override=override,
+        provider_id=provider.provider_id,
+        source=provider.source,
+    )
+    if older_issue:
+        issues.append(older_issue)
+
+    errors = [issue for issue in issues if issue.get("severity") == "error"]
+    warnings = [issue for issue in issues if issue.get("severity") != "error"]
+    response = _etf_holdings_import_response(
+        snapshot=snapshot,
+        issues=issues,
+        warnings=warnings,
+        errors=errors,
+        confirm=confirm,
+        imported=False,
+    )
+    response["provider"] = _safe_etf_provider_metadata(provider.provider_id, snapshot, result, errors=errors)
+    if errors:
+        response["message"] = "ETF holdings provider has validation or fetch errors."
+
+    if errors:
+        return response, 409 if any(issue.get("code") == "older_snapshot_exists" for issue in errors) and confirm else (400 if confirm else 200)
+    if not confirm:
+        response["message"] = "Preview only. No ETF holdings snapshot was written."
+        return response, 200
+
+    imported = upsert_etf_holding_snapshot(
+        central_db_path,
+        etf_ticker=snapshot["etf_ticker"],
+        as_of_date=snapshot["as_of_date"],
+        source=snapshot["source"],
+        source_url=snapshot.get("source_url", ""),
+        status=snapshot.get("status", "ok"),
+        notes=snapshot.get("notes", ""),
+        rows=list(snapshot.get("components") or []),
+    )
+    imported_snapshot = dict(imported.get("snapshot") or {})
+    imported_components = list(imported.get("components") or [])
+    response = _etf_holdings_import_response(
+        snapshot={
+            **snapshot,
+            **{
+                "row_count": imported_snapshot.get("row_count", snapshot.get("row_count", 0)),
+                "components": imported_components,
+            },
+        },
+        issues=issues,
+        warnings=warnings,
+        errors=errors,
+        confirm=confirm,
+        imported=True,
+    )
+    response["provider"] = _safe_etf_provider_metadata(provider.provider_id, snapshot, result, errors=errors)
+    response["message"] = "ETF holdings snapshot imported from configured provider."
+    return response, 200
+
+
+def _empty_etf_holdings_provider_response(
+    ticker: str,
+    *,
+    confirm: bool,
+    issues: list[dict[str, Any]],
+    provider_id: str = "",
+) -> dict[str, Any]:
+    errors = [issue for issue in issues if issue.get("severity") == "error"]
+    warnings = [issue for issue in issues if issue.get("severity") != "error"]
+    snapshot = _empty_provider_snapshot(ticker=ticker, source=provider_id or "configured_http_etf_holdings")
+    response = _etf_holdings_import_response(
+        snapshot=snapshot,
+        issues=issues,
+        warnings=warnings,
+        errors=errors,
+        confirm=confirm,
+        imported=False,
+    )
+    if errors:
+        response["message"] = "ETF holdings provider has validation or fetch errors."
+    response["provider"] = {
+        "provider_id": provider_id or "configured_http_etf_holdings",
+        "fetched_at": "",
+        "status": "error",
+        "message": errors[0]["message"] if errors else "",
+        "parser_version": "",
+        "checksum": "",
+    }
+    return response
+
+
+def _empty_provider_snapshot(*, ticker: str, source: str) -> dict[str, Any]:
+    return {
+        "etf_ticker": str(ticker or "").strip().upper(),
+        "as_of_date": "",
+        "source": str(source or "configured_http_etf_holdings").strip() or "configured_http_etf_holdings",
+        "source_url": "",
+        "status": "error",
+        "row_count": 0,
+        "notes": "",
+        "components": [],
+        "message": "",
+    }
+
+
+def _safe_etf_provider_metadata(
+    provider_id: str,
+    snapshot: dict[str, Any],
+    result: Any,
+    *,
+    errors: list[dict[str, Any]],
+) -> dict[str, Any]:
+    fetched_at = result.fetched_at.isoformat() if getattr(result, "fetched_at", None) else str(snapshot.get("fetched_at") or "")
+    return {
+        "provider_id": str(provider_id or ""),
+        "fetched_at": fetched_at,
+        "status": "error" if errors else str(snapshot.get("status") or "ok"),
+        "message": str(snapshot.get("message") or (errors[0]["message"] if errors else "")).strip(),
+        "parser_version": str(snapshot.get("parser_version") or "").strip(),
+        "checksum": str(snapshot.get("checksum") or "").strip(),
+    }
+
+
 def _etf_holdings_import_response(
     *,
     snapshot: dict[str, Any],
@@ -2863,7 +3060,14 @@ def _safe_provider_issue(issue: Any) -> dict[str, Any]:
     return safe
 
 
-def _older_etf_snapshot_issue(central_db_path: Path, snapshot: dict[str, Any], *, override: bool) -> dict[str, Any] | None:
+def _older_etf_snapshot_issue(
+    central_db_path: Path,
+    snapshot: dict[str, Any],
+    *,
+    override: bool,
+    provider_id: str = "manual_csv",
+    source: str = "manual_csv",
+) -> dict[str, Any] | None:
     if override:
         return None
     ticker = str(snapshot.get("etf_ticker") or "").strip().upper()
@@ -2877,13 +3081,13 @@ def _older_etf_snapshot_issue(central_db_path: Path, snapshot: dict[str, Any], *
     existing_date = str(existing.get("snapshot", {}).get("as_of_date") or "").strip()[:10] if existing else ""
     if existing_date and existing_date > as_of_date:
         return {
-            "provider_id": "manual_csv",
+            "provider_id": provider_id,
             "code": "older_snapshot_exists",
             "message": f"Existing ETF holdings snapshot for {ticker} is newer ({existing_date}) than submitted snapshot ({as_of_date}).",
             "severity": "error",
             "retryable": False,
             "instrument_id": ticker,
-            "source": "manual_csv",
+            "source": source,
             "details": {
                 "existing_as_of_date": existing_date,
                 "submitted_as_of_date": as_of_date,

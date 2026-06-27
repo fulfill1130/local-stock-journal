@@ -58,9 +58,46 @@ The sample CSV files are synthetic. They are not broker records, account records
 
 ETF holdings providers load, parse, normalize, and validate holdings snapshots only. They do not write SQLite directly; callers must persist accepted snapshots through the existing ETF holdings storage helper.
 
-`LocalCsvEtfHoldingsProvider` reads the synthetic `sample_data/market/etf_holdings.csv` format for offline tests and demos. Live ETF holdings providers are future work and should keep private configuration, caches, credentials, and raw provider responses local and ignored.
+`LocalCsvEtfHoldingsProvider` reads the synthetic `sample_data/market/etf_holdings.csv` format for offline tests and demos.
 
 Manual ETF holdings CSV import is the first real input path for ETF component snapshots. It supports preview before confirmation and writes only market/research data through the ETF holdings storage helper. Imported ETF holdings are not account ledger data and must not create transactions, lots, or final account records.
+
+`ConfiguredHttpEtfHoldingsProvider` is a manual-trigger live provider foundation for optional local use. It is not wired into page-open loading, dashboard refresh, or any scheduler. The manual trigger endpoint previews provider output before confirmation and writes only accepted ETF holdings snapshots through the ETF holdings storage helper.
+
+Private live provider settings belong only in ignored local configuration:
+
+```text
+config/providers.local.json
+```
+
+Safe example shape:
+
+```json
+{
+  "etf_holdings": {
+    "providers": [
+      {
+        "provider_id": "example_etf_holdings",
+        "type": "http",
+        "url_env": "ETF_HOLDINGS_URL",
+        "format": "csv",
+        "tickers": ["DEMOA"],
+        "source": "example_provider",
+        "public_source_url": "https://example.invalid/holdings",
+        "api_key_env": "ETF_HOLDINGS_API_KEY"
+      }
+    ]
+  }
+}
+```
+
+Do not commit API keys, authenticated URLs, cookies, private provider URLs, or raw provider responses. If raw response caching is explicitly enabled for local troubleshooting, cache files must stay under the ignored runtime path:
+
+```text
+data/provider_cache/etf_holdings/
+```
+
+Scheduler refresh, page-open provider fetching, and broader live-provider automation remain future work until provider health, error handling, and source quality are stable.
 
 ## yfinance Adapter Status
 
