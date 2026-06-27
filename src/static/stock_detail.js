@@ -28,6 +28,18 @@ const pageState = {
     errors: [],
     warnings: [],
   },
+  etfHoldingsProvider: {
+    ticker: "",
+    providerId: "",
+    override: false,
+    panelOpen: false,
+    status: "idle",
+    preview: null,
+    previewValid: false,
+    message: "",
+    errors: [],
+    warnings: [],
+  },
   klineSelections: {},
   klineDisplay: {
     ma: true,
@@ -441,6 +453,13 @@ function etfImportIssueText(issue) {
     components_required: "至少需要一筆成分股代號或名稱。",
     negative_weight: "權重不可為負數。",
     older_snapshot_exists: "已有較新的持股快照；如仍要匯入，請勾選允許匯入較舊快照。",
+    provider_config_missing: "尚未設定此 ETF 的投信來源，可改用 CSV 匯入。",
+    provider_not_found: "找不到可用的投信來源設定，可改用 CSV 匯入。",
+    provider_unsupported_ticker: "目前設定的投信來源不支援這檔 ETF，可改用 CSV 匯入。",
+    provider_fetch_failed: "投信來源暫時無法讀取，請稍後再試或改用 CSV 匯入。",
+    provider_parse_failed: "投信來源格式無法解析，可改用 CSV 匯入。",
+    provider_no_snapshot: "投信來源未回傳可用的持股快照。",
+    ticker_required: "缺少 ETF 代號。",
   };
   return messages[code] || issue?.message || code || "CSV 驗證失敗。";
 }
@@ -454,11 +473,12 @@ function renderEtfImportMessages(items, className) {
     </div>`;
 }
 
-function renderEtfImportPreview(preview) {
+function renderEtfImportPreview(preview, statusLabel = "") {
   if (!preview) return "";
   const snapshot = preview.snapshot || {};
   const summary = preview.summary || {};
   const rows = Array.isArray(preview.components) ? preview.components.slice(0, 5) : [];
+  const label = statusLabel || (preview.imported ? "已匯入" : "預覽");
   return `
     <div class="etf-import-preview">
       <div class="stock-detail-metrics compact etf-import-preview-metrics">
@@ -466,7 +486,7 @@ function renderEtfImportPreview(preview) {
         ${detailMetric("來源", escapeHtml(etfHoldingsSourceLabel(snapshot.source || summary.source)))}
         ${detailMetric("成分數", money(summary.component_count ?? rows.length))}
         ${detailMetric("權重合計", weightPercent(summary.weight_total))}
-        ${detailMetric("狀態", escapeHtml(preview.imported ? "已匯入" : "預覽"))}
+        ${detailMetric("狀態", escapeHtml(label))}
       </div>
       ${rows.length ? `
         <div class="etf-import-preview-list">
@@ -535,6 +555,51 @@ function renderEtfHoldingsImportPanel(item) {
     </details>`;
 }
 
+function renderEtfHoldingsProviderPanel(item) {
+  if (!isEtfInstrument(item)) return "";
+  const key = etfHoldingsCacheKey(item);
+  const providerState = pageState.etfHoldingsProvider;
+  if (providerState.ticker !== key) {
+    providerState.ticker = key;
+    providerState.preview = null;
+    providerState.previewValid = false;
+    providerState.message = "";
+    providerState.errors = [];
+    providerState.warnings = [];
+    providerState.status = "idle";
+  }
+  const loading = providerState.status === "loading";
+  const canConfirm = providerState.previewValid && !loading;
+  const open = providerState.panelOpen || providerState.status !== "idle" || providerState.preview;
+  return `
+    <details class="etf-import-panel etf-provider-panel" ${open ? "open" : ""}>
+      <summary class="etf-import-summary">
+        <strong>從投信來源更新</strong>
+        <span>手動預覽投信/供應商資料，確認後才寫入</span>
+      </summary>
+      <div class="etf-import-body">
+        <div class="etf-provider-controls">
+          <label>
+            <span>Provider ID</span>
+            <input data-etf-provider-field="providerId" type="text" value="${escapeHtml(providerState.providerId || "")}" placeholder="留空使用第一個可用來源">
+          </label>
+          <label class="etf-import-checkbox">
+            <input data-etf-provider-field="override" type="checkbox" ${providerState.override ? "checked" : ""}>
+            <span>允許匯入較舊快照</span>
+          </label>
+        </div>
+        <div class="etf-import-actions">
+          <button class="icon-button" type="button" data-etf-provider-action="preview" ${loading ? "disabled" : ""}>預覽來源</button>
+          <button class="icon-button" type="button" data-etf-provider-action="confirm" ${canConfirm ? "" : "disabled"}>確認匯入</button>
+        </div>
+        ${providerState.message ? `<p class="etf-import-status">${escapeHtml(providerState.message)}</p>` : ""}
+        ${renderEtfImportMessages(providerState.errors, "error-text")}
+        ${renderEtfImportMessages(providerState.warnings, "warning-text")}
+        ${renderEtfImportPreview(providerState.preview, providerState.preview?.imported ? "已匯入" : "未匯入預覽")}
+      </div>
+    </details>`;
+}
+
 function renderEtfHoldingsSection(item) {
   const key = etfHoldingsCacheKey(item);
   if (!key) return "";
@@ -549,6 +614,7 @@ function renderEtfHoldingsSection(item) {
       <section class="stock-detail-section etf-holdings-card">
         <div class="section-title stock-detail-section-title"><h2>ETF 持股組成</h2></div>
         <div class="empty">讀取 ETF 持股資料中...</div>
+        ${renderEtfHoldingsProviderPanel(item)}
         ${renderEtfHoldingsImportPanel(item)}
       </section>` : "";
   }
@@ -558,6 +624,7 @@ function renderEtfHoldingsSection(item) {
       <section class="stock-detail-section etf-holdings-card">
         <div class="section-title stock-detail-section-title"><h2>ETF 持股組成</h2></div>
         <div class="empty">尚未建立持股快照</div>
+        ${renderEtfHoldingsProviderPanel(item)}
         ${renderEtfHoldingsImportPanel(item)}
       </section>` : "";
   }
@@ -570,6 +637,7 @@ function renderEtfHoldingsSection(item) {
       <section class="stock-detail-section etf-holdings-card">
         <div class="section-title stock-detail-section-title"><h2>ETF 持股組成</h2></div>
         <div class="empty">${escapeHtml(payload.message ? "無 ETF 持股資料" : "尚未建立持股快照")}</div>
+        ${renderEtfHoldingsProviderPanel(item)}
         ${renderEtfHoldingsImportPanel(item)}
       </section>` : "";
   }
@@ -619,6 +687,7 @@ function renderEtfHoldingsSection(item) {
             </article>`;
         }).join("")}
       </div>
+      ${renderEtfHoldingsProviderPanel(item)}
       ${renderEtfHoldingsImportPanel(item)}
     </section>`;
 }
@@ -1277,6 +1346,44 @@ function etfImportPayload(item, confirm) {
   };
 }
 
+function syncEtfProviderStateFromDom({ resetPreview = false } = {}) {
+  const fields = document.querySelectorAll("[data-etf-provider-field]");
+  if (!fields.length) return;
+  const providerState = pageState.etfHoldingsProvider;
+  providerState.panelOpen = Boolean(document.querySelector(".etf-provider-panel")?.open);
+  fields.forEach((field) => {
+    const key = field.dataset.etfProviderField;
+    if (!Object.prototype.hasOwnProperty.call(providerState, key)) return;
+    providerState[key] = field.type === "checkbox" ? field.checked : field.value;
+  });
+  if (resetPreview) {
+    providerState.preview = null;
+    providerState.previewValid = false;
+    providerState.status = "idle";
+    providerState.message = "";
+    providerState.errors = [];
+    providerState.warnings = [];
+    document.querySelectorAll('[data-etf-provider-action="confirm"]').forEach((button) => {
+      button.disabled = true;
+    });
+    document.querySelectorAll(".etf-provider-panel .etf-import-status, .etf-provider-panel .etf-import-messages, .etf-provider-panel .etf-import-preview").forEach((node) => {
+      node.remove();
+    });
+  }
+}
+
+function etfProviderPayload(item, confirm) {
+  const providerState = pageState.etfHoldingsProvider;
+  const payload = {
+    ticker: String(item?.ticker || "").trim().toUpperCase(),
+    override: Boolean(providerState.override),
+    confirm: Boolean(confirm),
+  };
+  const providerId = String(providerState.providerId || "").trim();
+  if (providerId) payload.provider_id = providerId;
+  return payload;
+}
+
 async function submitEtfHoldingsImport(confirm = false) {
   const item = selectedItem();
   if (!item?.ticker || !isEtfInstrument(item)) return;
@@ -1341,6 +1448,64 @@ async function submitEtfHoldingsImport(confirm = false) {
     importState.message = "CSV 匯入服務暫時無法使用。";
     importState.errors = [{ code: "request_failed", message: error.message || String(error) }];
     importState.warnings = [];
+  }
+
+  if (etfHoldingsCacheKey(selectedItem()) === key) {
+    renderSelectedInstrument();
+  }
+}
+
+async function submitEtfHoldingsProvider(confirm = false) {
+  const item = selectedItem();
+  if (!item?.ticker || !isEtfInstrument(item)) return;
+  syncEtfProviderStateFromDom();
+  const providerState = pageState.etfHoldingsProvider;
+  if (confirm && !providerState.previewValid) {
+    providerState.status = "error";
+    providerState.message = "請先完成有效的來源預覽，再確認匯入。";
+    providerState.errors = [];
+    renderSelectedInstrument();
+    return;
+  }
+
+  const key = etfHoldingsCacheKey(item);
+  providerState.status = "loading";
+  providerState.message = confirm ? "匯入投信來源中..." : "讀取投信來源預覽中...";
+  providerState.errors = [];
+  providerState.warnings = [];
+  renderSelectedInstrument();
+
+  try {
+    const response = await fetch(withToken("/api/database/etf-holdings/fetch-provider"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(etfProviderPayload(item, confirm)),
+    });
+    const data = await response.json().catch(() => ({}));
+    const ok = response.ok && data?.ok === true;
+    providerState.status = ok ? "success" : "error";
+    providerState.preview = data && (data.snapshot || data.components || data.summary) ? data : null;
+    providerState.previewValid = ok && !confirm;
+    providerState.errors = ok ? [] : etfImportIssues(data);
+    providerState.warnings = Array.isArray(data?.warnings) ? data.warnings : [];
+    providerState.message = ok
+      ? (confirm ? "ETF 持股已從投信來源匯入。" : "未匯入預覽完成，確認後才會寫入。")
+      : (data?.message || "尚未設定此 ETF 的投信來源，可改用 CSV 匯入。");
+
+    if (ok && confirm) {
+      providerState.previewValid = false;
+      pageState.etfHoldingsCache[key] = { status: "idle", payload: null };
+      if (etfHoldingsCacheKey(selectedItem()) === key) {
+        await loadEtfHoldingsForSelected();
+        return;
+      }
+    }
+  } catch (error) {
+    providerState.status = "error";
+    providerState.previewValid = false;
+    providerState.message = "投信來源暫時無法使用，可改用 CSV 匯入。";
+    providerState.errors = [{ code: "provider_fetch_failed", message: error.message || String(error) }];
+    providerState.warnings = [];
   }
 
   if (etfHoldingsCacheKey(selectedItem()) === key) {
@@ -1454,15 +1619,33 @@ document.addEventListener("change", (event) => {
   if (!event.target.closest("[data-etf-import-field]")) return;
   syncEtfImportStateFromDom({ resetPreview: true });
 });
+document.addEventListener("input", (event) => {
+  if (!event.target.closest("[data-etf-provider-field]")) return;
+  syncEtfProviderStateFromDom({ resetPreview: true });
+});
+document.addEventListener("change", (event) => {
+  if (!event.target.closest("[data-etf-provider-field]")) return;
+  syncEtfProviderStateFromDom({ resetPreview: true });
+});
 document.addEventListener("toggle", (event) => {
-  if (!event.target.matches(".etf-import-panel")) return;
+  if (!event.target.matches(".etf-import-panel") || event.target.matches(".etf-provider-panel")) return;
   pageState.etfHoldingsImport.panelOpen = event.target.open;
+}, true);
+document.addEventListener("toggle", (event) => {
+  if (!event.target.matches(".etf-provider-panel")) return;
+  pageState.etfHoldingsProvider.panelOpen = event.target.open;
 }, true);
 document.addEventListener("click", (event) => {
   const button = event.target.closest("[data-etf-import-action]");
   if (!button) return;
   pageState.etfHoldingsImport.panelOpen = true;
   submitEtfHoldingsImport(button.dataset.etfImportAction === "confirm");
+});
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-etf-provider-action]");
+  if (!button) return;
+  pageState.etfHoldingsProvider.panelOpen = true;
+  submitEtfHoldingsProvider(button.dataset.etfProviderAction === "confirm");
 });
 byId("stock-detail-refresh").addEventListener("click", () => loadPage(true));
 loadPage(false);

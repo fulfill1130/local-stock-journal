@@ -2986,6 +2986,13 @@ h2 {
   align-items: end;
 }
 
+.etf-provider-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
 .etf-import-checkbox {
   min-height: 42px;
   display: flex !important;
@@ -3276,6 +3283,10 @@ h2 {
   }
 
   .etf-import-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .etf-provider-controls {
     grid-template-columns: 1fr;
   }
 
