@@ -169,6 +169,98 @@ def _ticker(value: Any) -> str:
     return str(value or "").strip().upper()
 
 
+def normalize_etf_holdings_csv_text(
+    csv_text: str,
+    *,
+    etf_ticker: str = "",
+    source: str = "manual_csv",
+    source_url: str = "",
+) -> tuple[dict[str, Any], tuple[ProviderIssue, ...]]:
+    provider = LocalCsvEtfHoldingsProvider(Path("__manual_csv_text__"))
+    text = str(csv_text or "")
+    if not text.strip():
+        snapshot = _empty_snapshot(etf_ticker=etf_ticker, source=source, source_url=source_url)
+        return snapshot, (
+            provider._issue(
+                "csv_text_required",
+                "csv_text is required.",
+                instrument_id=_ticker(etf_ticker),
+            ),
+        )
+
+    try:
+        rows = list(csv.DictReader(text.splitlines()))
+    except csv.Error as exc:
+        snapshot = _empty_snapshot(etf_ticker=etf_ticker, source=source, source_url=source_url)
+        return snapshot, (
+            provider._issue(
+                "invalid_csv",
+                f"CSV could not be parsed: {exc}",
+                instrument_id=_ticker(etf_ticker),
+            ),
+        )
+
+    canonical_rows = [_canonical_holdings_row(row, etf_ticker=etf_ticker, source=source, source_url=source_url) for row in rows if _has_any_value(row)]
+    parsed = provider.parse(canonical_rows)
+    snapshot = provider.normalize(parsed)
+    snapshot["fetched_at"] = datetime.now().astimezone().isoformat()
+    snapshot["parser_version"] = provider.parser_version
+    snapshot["checksum"] = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    issues = provider.validate(snapshot)
+    return snapshot, issues
+
+
+def _empty_snapshot(*, etf_ticker: str, source: str, source_url: str) -> dict[str, Any]:
+    return {
+        "etf_ticker": _ticker(etf_ticker),
+        "as_of_date": "",
+        "source": str(source or "manual_csv").strip() or "manual_csv",
+        "source_url": str(source_url or "").strip(),
+        "status": "error",
+        "row_count": 0,
+        "notes": "",
+        "components": [],
+        "message": "",
+    }
+
+
+def _canonical_holdings_row(row: dict[str, Any], *, etf_ticker: str, source: str, source_url: str) -> dict[str, Any]:
+    request_source = str(source or "manual_csv").strip() or "manual_csv"
+    return {
+        "etf_ticker": _first_value(row, "etf_ticker", "ETF", "ticker") or etf_ticker,
+        "as_of_date": _first_value(row, "as_of_date", "date"),
+        "source": request_source,
+        "source_url": str(source_url or "").strip() or _first_value(row, "source_url"),
+        "status": _first_value(row, "status") or "ok",
+        "notes": _first_value(row, "notes"),
+        "constituent_ticker": _first_value(row, "constituent_ticker", "component_ticker", "holding_ticker"),
+        "constituent_name": _first_value(row, "constituent_name", "name"),
+        "weight": _first_value(row, "weight", "weight_percent"),
+        "shares": _first_value(row, "shares"),
+        "market_value": _first_value(row, "market_value"),
+        "industry": _first_value(row, "industry"),
+        "sort_order": _first_value(row, "sort_order"),
+    }
+
+
+def _first_value(row: dict[str, Any], *names: str) -> str:
+    normalized = {_column_key(key): value for key, value in row.items()}
+    for name in names:
+        value = normalized.get(_column_key(name))
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _column_key(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _has_any_value(row: dict[str, Any]) -> bool:
+    return any(str(value or "").strip() for value in row.values())
+
+
 def _float_or_none(value: Any) -> float | None:
     text = str(value or "").strip()
     if not text:

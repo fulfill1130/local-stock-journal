@@ -54,6 +54,7 @@ from central_store import (
     upsert_ohlcv_daily,
     upsert_after_close_quotes,
     upsert_etf_dividends,
+    upsert_etf_holding_snapshot,
     upsert_ohlcv_intraday_15m,
     upsert_quote_snapshots_15m,
 )
@@ -65,6 +66,7 @@ from import_staging import (
     load_import_staging_batch,
     summarize_import_staging_batch,
 )
+from local_csv_etf_holdings_provider import normalize_etf_holdings_csv_text
 from market import (
     QuoteService,
     US_MARKETS,
@@ -1057,6 +1059,12 @@ def create_app(
                 as_of=request.args.get("as_of", "latest"),
             )
         )
+
+    @app.post("/api/database/etf-holdings/import-csv")
+    def api_database_etf_holdings_import_csv():
+        payload = request.get_json(silent=True) or {}
+        result, status_code = import_etf_holdings_csv_payload(central_db_path, payload)
+        return jsonify(result), status_code
 
     @app.post("/api/database/<ticker>/history/check")
     def api_database_history_check(ticker: str):
@@ -2710,6 +2718,178 @@ def etf_holdings_payload(central_db_path: Path, ticker: str, as_of: str = "lates
         "message": "",
         "data_status": data_status_payload(central_db_path),
     }
+
+
+def import_etf_holdings_csv_payload(central_db_path: Path, payload: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    confirm = bool(payload.get("confirm", False))
+    override = bool(payload.get("override", False))
+    source = str(payload.get("source") or "manual_csv").strip() or "manual_csv"
+    source_url = str(payload.get("source_url") or "").strip()
+    snapshot, provider_issues = normalize_etf_holdings_csv_text(
+        str(payload.get("csv_text") or ""),
+        etf_ticker=str(payload.get("etf_ticker") or ""),
+        source=source,
+        source_url=source_url,
+    )
+    issues = [_safe_provider_issue(issue) for issue in provider_issues]
+    older_issue = _older_etf_snapshot_issue(central_db_path, snapshot, override=override)
+    if older_issue:
+        issues.append(older_issue)
+
+    errors = [issue for issue in issues if issue.get("severity") == "error"]
+    warnings = [issue for issue in issues if issue.get("severity") != "error"]
+    response = _etf_holdings_import_response(
+        snapshot=snapshot,
+        issues=issues,
+        warnings=warnings,
+        errors=errors,
+        confirm=confirm,
+        imported=False,
+    )
+
+    if errors:
+        return response, 409 if any(issue.get("code") == "older_snapshot_exists" for issue in errors) and confirm else (400 if confirm else 200)
+
+    if not confirm:
+        response["message"] = "Preview only. No ETF holdings snapshot was written."
+        return response, 200
+
+    imported = upsert_etf_holding_snapshot(
+        central_db_path,
+        etf_ticker=snapshot["etf_ticker"],
+        as_of_date=snapshot["as_of_date"],
+        source=snapshot["source"],
+        source_url=snapshot.get("source_url", ""),
+        status=snapshot.get("status", "ok"),
+        notes=snapshot.get("notes", ""),
+        rows=list(snapshot.get("components") or []),
+    )
+    imported_snapshot = dict(imported.get("snapshot") or {})
+    imported_components = list(imported.get("components") or [])
+    response = _etf_holdings_import_response(
+        snapshot={
+            **snapshot,
+            **{
+                "row_count": imported_snapshot.get("row_count", snapshot.get("row_count", 0)),
+                "components": imported_components,
+            },
+        },
+        issues=issues,
+        warnings=warnings,
+        errors=errors,
+        confirm=confirm,
+        imported=True,
+    )
+    response["message"] = "ETF holdings snapshot imported."
+    return response, 200
+
+
+def _etf_holdings_import_response(
+    *,
+    snapshot: dict[str, Any],
+    issues: list[dict[str, Any]],
+    warnings: list[dict[str, Any]],
+    errors: list[dict[str, Any]],
+    confirm: bool,
+    imported: bool,
+) -> dict[str, Any]:
+    components = list(snapshot.get("components") or [])
+    return {
+        "ok": not errors,
+        "mode": "import" if confirm else "preview",
+        "confirmed": confirm,
+        "imported": imported,
+        "snapshot": _safe_etf_snapshot_preview(snapshot),
+        "components": [_safe_etf_component_preview(row) for row in components],
+        "summary": {
+            "etf_ticker": str(snapshot.get("etf_ticker") or "").strip().upper(),
+            "as_of_date": str(snapshot.get("as_of_date") or "").strip()[:10],
+            "source": str(snapshot.get("source") or "").strip(),
+            "component_count": len(components),
+            "weight_total": sum(as_float(row.get("weight"), 0) or 0 for row in components),
+        },
+        "warnings": warnings,
+        "errors": errors,
+        "issues": issues,
+        "message": "ETF holdings CSV has validation errors." if errors else "",
+    }
+
+
+def _safe_etf_snapshot_preview(snapshot: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "etf_ticker": str(snapshot.get("etf_ticker") or "").strip().upper(),
+        "as_of_date": str(snapshot.get("as_of_date") or "").strip()[:10],
+        "source": str(snapshot.get("source") or "").strip(),
+        "source_url": str(snapshot.get("source_url") or "").strip(),
+        "status": str(snapshot.get("status") or "ok").strip() or "ok",
+        "row_count": int(snapshot.get("row_count") or len(snapshot.get("components") or [])),
+        "notes": str(snapshot.get("notes") or "").strip(),
+        "parser_version": str(snapshot.get("parser_version") or "").strip(),
+        "checksum": str(snapshot.get("checksum") or "").strip(),
+        "message": str(snapshot.get("message") or "").strip(),
+    }
+
+
+def _safe_etf_component_preview(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "constituent_ticker": str(row.get("constituent_ticker") or "").strip().upper(),
+        "constituent_name": str(row.get("constituent_name") or "").strip(),
+        "weight": as_float(row.get("weight")),
+        "shares": as_float(row.get("shares")),
+        "market_value": as_float(row.get("market_value")),
+        "industry": str(row.get("industry") or "").strip(),
+        "sort_order": int(as_float(row.get("sort_order"), 0) or 0),
+    }
+
+
+def _safe_provider_issue(issue: Any) -> dict[str, Any]:
+    payload = issue.to_dict() if hasattr(issue, "to_dict") else dict(issue)
+    safe = {
+        "provider_id": str(payload.get("provider_id") or ""),
+        "code": str(payload.get("code") or ""),
+        "message": str(payload.get("message") or ""),
+        "severity": str(payload.get("severity") or "error"),
+        "retryable": bool(payload.get("retryable", False)),
+        "instrument_id": str(payload.get("instrument_id") or ""),
+        "source": str(payload.get("source") or ""),
+    }
+    details = payload.get("details")
+    if isinstance(details, dict):
+        safe["details"] = {
+            str(key): value
+            for key, value in details.items()
+            if isinstance(value, (str, int, float, bool)) or value is None
+        }
+    return safe
+
+
+def _older_etf_snapshot_issue(central_db_path: Path, snapshot: dict[str, Any], *, override: bool) -> dict[str, Any] | None:
+    if override:
+        return None
+    ticker = str(snapshot.get("etf_ticker") or "").strip().upper()
+    as_of_date = str(snapshot.get("as_of_date") or "").strip()[:10]
+    if not ticker or not as_of_date:
+        return None
+    etf_db_path = central_db_path / SEGMENT_FILES["etf"]
+    if not etf_db_path.exists():
+        return None
+    existing = get_etf_holding_snapshot(central_db_path, ticker)
+    existing_date = str(existing.get("snapshot", {}).get("as_of_date") or "").strip()[:10] if existing else ""
+    if existing_date and existing_date > as_of_date:
+        return {
+            "provider_id": "manual_csv",
+            "code": "older_snapshot_exists",
+            "message": f"Existing ETF holdings snapshot for {ticker} is newer ({existing_date}) than submitted snapshot ({as_of_date}).",
+            "severity": "error",
+            "retryable": False,
+            "instrument_id": ticker,
+            "source": "manual_csv",
+            "details": {
+                "existing_as_of_date": existing_date,
+                "submitted_as_of_date": as_of_date,
+            },
+        }
+    return None
 
 
 def market_data_status_payload(

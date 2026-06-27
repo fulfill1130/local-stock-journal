@@ -60,6 +60,8 @@ ETF holdings providers load, parse, normalize, and validate holdings snapshots o
 
 `LocalCsvEtfHoldingsProvider` reads the synthetic `sample_data/market/etf_holdings.csv` format for offline tests and demos. Live ETF holdings providers are future work and should keep private configuration, caches, credentials, and raw provider responses local and ignored.
 
+Manual ETF holdings CSV import is the first real input path for ETF component snapshots. It supports preview before confirmation and writes only market/research data through the ETF holdings storage helper. Imported ETF holdings are not account ledger data and must not create transactions, lots, or final account records.
+
 ## yfinance Adapter Status
 
 `YFinanceQuoteProvider` is a thin adapter around the existing yfinance quote behavior in `market.py`.
