@@ -2162,6 +2162,218 @@ def upsert_etf_dividends(path: Path, rows: list[dict[str, Any]]) -> int:
     return written
 
 
+def ensure_etf_holdings_schema(path: Path) -> None:
+    ensure_central_db(path)
+    db_path = segment_db_paths(path)["etf"]
+    conn = sqlite3.connect(db_path)
+    try:
+        _create_etf_holdings_schema(conn)
+        _create_etf_holdings_indexes(conn)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def upsert_etf_holding_snapshot(
+    path: Path,
+    *,
+    etf_ticker: str,
+    as_of_date: str,
+    source: str,
+    rows: list[dict[str, Any]],
+    source_url: str = "",
+    status: str = "ok",
+    notes: str = "",
+) -> dict[str, Any]:
+    ensure_etf_holdings_schema(path)
+    ticker = str(etf_ticker or "").strip().upper()
+    as_of = str(as_of_date or "").strip()[:10]
+    normalized_source = str(source or "manual").strip() or "manual"
+    if not ticker:
+        raise ValueError("etf_ticker is required")
+    if not as_of:
+        raise ValueError("as_of_date is required")
+
+    components = [_normalize_etf_component_row(ticker, as_of, normalized_source, row, index) for index, row in enumerate(rows, 1)]
+    current = now_iso()
+    db_path = segment_db_paths(path)["etf"]
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.row_factory = sqlite3.Row
+        existing = conn.execute(
+            """
+            SELECT id, created_at
+            FROM etf_holding_snapshots
+            WHERE etf_ticker = ? AND as_of_date = ? AND source = ?
+            """,
+            (ticker, as_of, normalized_source),
+        ).fetchone()
+        created_at = existing["created_at"] if existing else current
+        conn.execute(
+            """
+            INSERT INTO etf_holding_snapshots (
+                etf_ticker, as_of_date, source, source_url, status,
+                row_count, created_at, updated_at, notes
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(etf_ticker, as_of_date, source) DO UPDATE SET
+                source_url = excluded.source_url,
+                status = excluded.status,
+                row_count = excluded.row_count,
+                updated_at = excluded.updated_at,
+                notes = excluded.notes
+            """,
+            (
+                ticker,
+                as_of,
+                normalized_source,
+                str(source_url or ""),
+                str(status or "ok"),
+                len(components),
+                created_at,
+                current,
+                str(notes or ""),
+            ),
+        )
+        snapshot = conn.execute(
+            """
+            SELECT *
+            FROM etf_holding_snapshots
+            WHERE etf_ticker = ? AND as_of_date = ? AND source = ?
+            """,
+            (ticker, as_of, normalized_source),
+        ).fetchone()
+        snapshot_id = int(snapshot["id"])
+        conn.execute("DELETE FROM etf_holding_components WHERE snapshot_id = ?", (snapshot_id,))
+        conn.executemany(
+            """
+            INSERT INTO etf_holding_components (
+                snapshot_id, etf_ticker, as_of_date, source,
+                constituent_ticker, constituent_name, weight, shares,
+                market_value, industry, sort_order, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    snapshot_id,
+                    row["etf_ticker"],
+                    row["as_of_date"],
+                    row["source"],
+                    row["constituent_ticker"],
+                    row["constituent_name"],
+                    row["weight"],
+                    row["shares"],
+                    row["market_value"],
+                    row["industry"],
+                    row["sort_order"],
+                    current,
+                )
+                for row in components
+            ],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    result = get_etf_holding_snapshot(path, ticker, as_of)
+    return result or {"snapshot": None, "components": []}
+
+
+def get_etf_holding_snapshot(path: Path, ticker: str, as_of_date: str | None = None) -> dict[str, Any] | None:
+    ensure_etf_holdings_schema(path)
+    normalized = str(ticker or "").strip().upper()
+    if not normalized:
+        return None
+    db_path = segment_db_paths(path)["etf"]
+    params: list[Any] = [normalized]
+    where = "etf_ticker = ?"
+    if as_of_date and str(as_of_date).strip().lower() != "latest":
+        where += " AND as_of_date = ?"
+        params.append(str(as_of_date).strip()[:10])
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.row_factory = sqlite3.Row
+        snapshot = conn.execute(
+            f"""
+            SELECT *
+            FROM etf_holding_snapshots
+            WHERE {where}
+            ORDER BY as_of_date DESC, updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            params,
+        ).fetchone()
+        if snapshot is None:
+            return None
+        components = conn.execute(
+            """
+            SELECT
+                etf_ticker,
+                as_of_date,
+                source,
+                constituent_ticker,
+                constituent_name,
+                weight,
+                shares,
+                market_value,
+                industry,
+                sort_order,
+                created_at
+            FROM etf_holding_components
+            WHERE snapshot_id = ?
+            ORDER BY sort_order, weight DESC, constituent_ticker
+            """,
+            (snapshot["id"],),
+        ).fetchall()
+    finally:
+        conn.close()
+    return {
+        "snapshot": dict(snapshot),
+        "components": [dict(row) for row in components],
+    }
+
+
+def _normalize_etf_component_row(
+    etf_ticker: str,
+    as_of_date: str,
+    source: str,
+    row: dict[str, Any],
+    default_sort_order: int,
+) -> dict[str, Any]:
+    return {
+        "etf_ticker": etf_ticker,
+        "as_of_date": as_of_date,
+        "source": source,
+        "constituent_ticker": str(row.get("constituent_ticker") or "").strip().upper(),
+        "constituent_name": str(row.get("constituent_name") or "").strip(),
+        "weight": _optional_float(row.get("weight")),
+        "shares": _optional_float(row.get("shares")),
+        "market_value": _optional_float(row.get("market_value")),
+        "industry": str(row.get("industry") or "").strip(),
+        "sort_order": _optional_int(row.get("sort_order")) or default_sort_order,
+    }
+
+
+def _optional_float(value: Any) -> float | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_int(value: Any) -> int | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return int(float(text))
+    except (TypeError, ValueError):
+        return None
+
+
 def set_dividend_target(
     path: Path,
     ticker: str,
@@ -3776,7 +3988,47 @@ def _create_market_schema(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    _create_etf_holdings_schema(conn)
     _create_market_indexes(conn)
+
+
+def _create_etf_holdings_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS etf_holding_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            etf_ticker TEXT NOT NULL,
+            as_of_date TEXT NOT NULL,
+            source TEXT NOT NULL,
+            source_url TEXT,
+            status TEXT NOT NULL,
+            row_count INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            notes TEXT,
+            UNIQUE(etf_ticker, as_of_date, source)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS etf_holding_components (
+            snapshot_id INTEGER NOT NULL,
+            etf_ticker TEXT NOT NULL,
+            as_of_date TEXT NOT NULL,
+            source TEXT NOT NULL,
+            constituent_ticker TEXT,
+            constituent_name TEXT,
+            weight REAL,
+            shares REAL,
+            market_value REAL,
+            industry TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(snapshot_id) REFERENCES etf_holding_snapshots(id)
+        )
+        """
+    )
 
 
 def _create_market_indexes(conn: sqlite3.Connection) -> None:
@@ -3808,6 +4060,22 @@ def _create_market_indexes(conn: sqlite3.Connection) -> None:
         "ON gmail_attachment_receipts(profile_slug, sha256)"
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_etf_dividends_ex_date ON etf_dividends(ex_dividend_date)")
+    _create_etf_holdings_indexes(conn)
+
+
+def _create_etf_holdings_indexes(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_etf_holding_snapshots_ticker_date "
+        "ON etf_holding_snapshots(etf_ticker, as_of_date)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_etf_holding_components_snapshot "
+        "ON etf_holding_components(snapshot_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_etf_holding_components_ticker "
+        "ON etf_holding_components(constituent_ticker)"
+    )
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:

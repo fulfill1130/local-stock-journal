@@ -49,8 +49,13 @@ class PrepareDemoRuntimeTests(unittest.TestCase):
                 _scalar(central_db_path / "etf.sqlite", "SELECT COUNT(*) FROM etf_dividends WHERE ticker = 'DEMOA'"),
                 1,
             )
+            self.assertGreaterEqual(
+                _scalar(central_db_path / "etf.sqlite", "SELECT COUNT(*) FROM etf_holding_components WHERE etf_ticker = 'DEMOA'"),
+                4,
+            )
             self.assertGreaterEqual(summary["history_rows"], 120)
             self.assertEqual(summary["quote_rows"], 2)
+            self.assertEqual(summary["etf_holding_rows"], 4)
 
     def test_reset_recreates_target_only_with_sentinel(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

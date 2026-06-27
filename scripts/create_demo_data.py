@@ -37,6 +37,7 @@ def create_demo_data(root: Path) -> None:
     profile_path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     write_quotes(market_dir / "quotes.csv")
     write_ohlcv(market_dir / "ohlcv_daily.csv")
+    write_etf_holdings(market_dir / "etf_holdings.csv")
 
 
 def demo_profile_state() -> dict:
@@ -166,6 +167,72 @@ def write_quotes(path: Path) -> None:
 
 def write_ohlcv(path: Path) -> None:
     rows = price_series(HELD_TICKER, 40.0, 0.13, 110000) + price_series(WATCH_TICKER, 21.0, 0.045, 85000)
+    write_csv(path, rows)
+
+
+def write_etf_holdings(path: Path) -> None:
+    rows = [
+        {
+            "etf_ticker": HELD_TICKER,
+            "as_of_date": "2026-04-16",
+            "source": SOURCE,
+            "source_url": "",
+            "status": "ok",
+            "notes": "Synthetic demo ETF component snapshot.",
+            "constituent_ticker": "DEMOX",
+            "constituent_name": "Demo Component X",
+            "weight": "35.50",
+            "shares": "120000",
+            "market_value": "4260000",
+            "industry": "Demo Technology",
+            "sort_order": "1",
+        },
+        {
+            "etf_ticker": HELD_TICKER,
+            "as_of_date": "2026-04-16",
+            "source": SOURCE,
+            "source_url": "",
+            "status": "ok",
+            "notes": "Synthetic demo ETF component snapshot.",
+            "constituent_ticker": "DEMOY",
+            "constituent_name": "Demo Component Y",
+            "weight": "27.25",
+            "shares": "90000",
+            "market_value": "3270000",
+            "industry": "Demo Finance",
+            "sort_order": "2",
+        },
+        {
+            "etf_ticker": HELD_TICKER,
+            "as_of_date": "2026-04-16",
+            "source": SOURCE,
+            "source_url": "",
+            "status": "ok",
+            "notes": "Synthetic demo ETF component snapshot.",
+            "constituent_ticker": "DEMOZ",
+            "constituent_name": "Demo Component Z",
+            "weight": "22.75",
+            "shares": "75000",
+            "market_value": "2730000",
+            "industry": "Demo Industry",
+            "sort_order": "3",
+        },
+        {
+            "etf_ticker": HELD_TICKER,
+            "as_of_date": "2026-04-16",
+            "source": SOURCE,
+            "source_url": "",
+            "status": "ok",
+            "notes": "Synthetic demo ETF component snapshot.",
+            "constituent_ticker": "DEMOCASH",
+            "constituent_name": "Demo Cash Position",
+            "weight": "14.50",
+            "shares": "",
+            "market_value": "1740000",
+            "industry": "Cash",
+            "sort_order": "4",
+        },
+    ]
     write_csv(path, rows)
 
 

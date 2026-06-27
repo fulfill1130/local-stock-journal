@@ -1,0 +1,5 @@
+etf_ticker,as_of_date,source,source_url,status,notes,constituent_ticker,constituent_name,weight,shares,market_value,industry,sort_order
+DEMOA,2026-04-16,synthetic_demo,,ok,Synthetic demo ETF component snapshot.,DEMOX,Demo Component X,35.50,120000,4260000,Demo Technology,1
+DEMOA,2026-04-16,synthetic_demo,,ok,Synthetic demo ETF component snapshot.,DEMOY,Demo Component Y,27.25,90000,3270000,Demo Finance,2
+DEMOA,2026-04-16,synthetic_demo,,ok,Synthetic demo ETF component snapshot.,DEMOZ,Demo Component Z,22.75,75000,2730000,Demo Industry,3
+DEMOA,2026-04-16,synthetic_demo,,ok,Synthetic demo ETF component snapshot.,DEMOCASH,Demo Cash Position,14.50,,1740000,Cash,4

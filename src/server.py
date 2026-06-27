@@ -23,6 +23,7 @@ from central_store import (
     enrich_items_with_instruments,
     ensure_central_db,
     finish_update_status,
+    get_etf_holding_snapshot,
     get_instrument,
     is_specific_name,
     latest_after_close_quote,
@@ -1045,6 +1046,16 @@ def create_app(
                     "last_date": rows[0]["trade_date"] if rows else None,
                 },
             }
+        )
+
+    @app.get("/api/database/<ticker>/etf-holdings")
+    def api_database_etf_holdings(ticker: str):
+        return jsonify(
+            etf_holdings_payload(
+                central_db_path,
+                ticker,
+                as_of=request.args.get("as_of", "latest"),
+            )
         )
 
     @app.post("/api/database/<ticker>/history/check")
@@ -2655,6 +2666,49 @@ def database_payload(
             "missing_quote_count": len(all_matching) - quote_count,
         },
         "instruments": instruments,
+    }
+
+
+def etf_holdings_payload(central_db_path: Path, ticker: str, as_of: str = "latest") -> dict[str, Any]:
+    normalized = str(ticker or "").strip().upper()
+    as_of_value = str(as_of or "latest").strip()
+    result = get_etf_holding_snapshot(
+        central_db_path,
+        normalized,
+        None if as_of_value.lower() in {"", "latest"} else as_of_value,
+    )
+    if not result:
+        return {
+            "ok": True,
+            "ticker": normalized,
+            "snapshot": None,
+            "components": [],
+            "summary": {
+                "component_count": 0,
+                "as_of_date": None,
+                "source": None,
+                "weight_total": 0,
+            },
+            "message": "No local ETF holdings snapshot is available for this ticker.",
+            "data_status": data_status_payload(central_db_path),
+        }
+
+    snapshot = result["snapshot"]
+    components = result["components"]
+    weight_total = sum(as_float(row.get("weight"), 0) or 0 for row in components)
+    return {
+        "ok": True,
+        "ticker": normalized,
+        "snapshot": snapshot,
+        "components": components,
+        "summary": {
+            "component_count": len(components),
+            "as_of_date": snapshot.get("as_of_date"),
+            "source": snapshot.get("source"),
+            "weight_total": weight_total,
+        },
+        "message": "",
+        "data_status": data_status_payload(central_db_path),
     }
 
 

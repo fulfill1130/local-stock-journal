@@ -40,11 +40,14 @@ class DemoDataGeneratorTests(unittest.TestCase):
     def test_generated_market_csv_has_enough_ohlcv_rows_for_demo_tickers(self) -> None:
         history_path = ROOT / "sample_data" / "market" / "ohlcv_daily.csv"
         quote_path = ROOT / "sample_data" / "market" / "quotes.csv"
+        etf_holdings_path = ROOT / "sample_data" / "market" / "etf_holdings.csv"
 
         with history_path.open(newline="", encoding="utf-8") as file:
             history_rows = list(csv.DictReader(file))
         with quote_path.open(newline="", encoding="utf-8") as file:
             quote_rows = list(csv.DictReader(file))
+        with etf_holdings_path.open(newline="", encoding="utf-8") as file:
+            etf_holding_rows = list(csv.DictReader(file))
 
         by_ticker: dict[str, int] = {}
         for row in history_rows:
@@ -53,7 +56,9 @@ class DemoDataGeneratorTests(unittest.TestCase):
         self.assertGreaterEqual(by_ticker.get("DEMOA", 0), 60)
         self.assertGreaterEqual(by_ticker.get("DEMOB", 0), 60)
         self.assertEqual({row["instrument_id"] for row in quote_rows}, {"DEMOA", "DEMOB"})
-        self.assertTrue(all(row["source"] == "synthetic_demo" for row in history_rows + quote_rows))
+        self.assertEqual({row["etf_ticker"] for row in etf_holding_rows}, {"DEMOA"})
+        self.assertGreaterEqual(len(etf_holding_rows), 4)
+        self.assertTrue(all(row["source"] == "synthetic_demo" for row in history_rows + quote_rows + etf_holding_rows))
 
 
 if __name__ == "__main__":

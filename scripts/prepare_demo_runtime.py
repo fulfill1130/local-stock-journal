@@ -23,6 +23,7 @@ from central_store import (  # noqa: E402
     instrument_id_for,
     instrument_market,
     segment_for_market,
+    upsert_etf_holding_snapshot,
 )
 from store import load_state, save_state  # noqa: E402
 from utils import yahoo_symbol  # noqa: E402
@@ -61,9 +62,11 @@ def prepare_demo_runtime(root: Path, target: Path | None = None, *, reset: bool 
     profile_source = sample_root / "profiles" / "demo" / "state.json"
     quotes_source = sample_root / "market" / "quotes.csv"
     ohlcv_source = sample_root / "market" / "ohlcv_daily.csv"
+    etf_holdings_source = sample_root / "market" / "etf_holdings.csv"
     _require_file(profile_source)
     _require_file(quotes_source)
     _require_file(ohlcv_source)
+    _require_file(etf_holdings_source)
 
     _write_sentinel(target)
     profile_target = target / "profiles" / "demo" / "state.json"
@@ -85,6 +88,7 @@ def prepare_demo_runtime(root: Path, target: Path | None = None, *, reset: bool 
 
     dividend_rows = _dividend_calendar_rows(state)
     dividends_written = _seed_dividends(central_db_path, dividend_rows, metadata)
+    etf_holdings_written = _seed_etf_holdings(central_db_path, _read_csv(etf_holdings_source), metadata)
     _seed_health_summary(central_db_path, metadata)
     gc.collect()
 
@@ -95,6 +99,7 @@ def prepare_demo_runtime(root: Path, target: Path | None = None, *, reset: bool 
         "history_rows": history_written,
         "quote_rows": quotes_written,
         "dividend_rows": dividends_written,
+        "etf_holding_rows": etf_holdings_written,
         "tickers": sorted(metadata),
     }
 
@@ -456,6 +461,40 @@ def _seed_dividends(
     return written
 
 
+def _seed_etf_holdings(
+    central_db_path: Path,
+    rows: list[dict[str, str]],
+    metadata: dict[str, dict[str, str]],
+) -> int:
+    grouped: dict[tuple[str, str, str], list[dict[str, str]]] = {}
+    for row in rows:
+        ticker = str(row.get("etf_ticker") or "").strip().upper()
+        meta = metadata.get(ticker)
+        if not ticker or not meta or meta.get("segment") != "etf":
+            continue
+        as_of_date = str(row.get("as_of_date") or "").strip()[:10]
+        source = str(row.get("source") or SOURCE).strip() or SOURCE
+        if not as_of_date:
+            continue
+        grouped.setdefault((ticker, as_of_date, source), []).append(row)
+
+    written = 0
+    for (ticker, as_of_date, source), batch in grouped.items():
+        first = batch[0]
+        result = upsert_etf_holding_snapshot(
+            central_db_path,
+            etf_ticker=ticker,
+            as_of_date=as_of_date,
+            source=source,
+            source_url=str(first.get("source_url") or ""),
+            status=str(first.get("status") or "ok"),
+            notes=str(first.get("notes") or ""),
+            rows=batch,
+        )
+        written += len(result.get("components") or [])
+    return written
+
+
 def _seed_health_summary(central_db_path: Path, metadata: dict[str, dict[str, str]]) -> None:
     current = datetime.now().astimezone().isoformat(timespec="seconds")
     for item in metadata.values():
@@ -527,6 +566,7 @@ def verify_demo_runtime(target: Path) -> dict[str, Any]:
         "demoa_rows": _count_rows(central_db_path / "etf.sqlite", "ohlcv_daily", "instrument_id = 'ETF:DEMOA'"),
         "demob_rows": _count_rows(central_db_path / "twse.sqlite", "ohlcv_daily", "instrument_id = 'TWSE:DEMOB'"),
         "demoa_dividends": _count_rows(central_db_path / "etf.sqlite", "etf_dividends", "ticker = 'DEMOA'"),
+        "demoa_etf_holdings": _count_rows(central_db_path / "etf.sqlite", "etf_holding_components", "etf_ticker = 'DEMOA'"),
     }
 
 
