@@ -13,6 +13,7 @@ const pageState = {
   klineRangeDays: 180,
   klineCache: {},
   dividendCalendarCache: {},
+  etfHoldingsCache: {},
   klineSelections: {},
   klineDisplay: {
     ma: true,
@@ -62,6 +63,12 @@ function percent(value) {
   const result = numberValue(value);
   if (result === null) return "N/A";
   return `${result >= 0 ? "+" : ""}${money(result, 2)}%`;
+}
+
+function weightPercent(value) {
+  const result = numberValue(value);
+  if (result === null) return "N/A";
+  return `${money(result, 2)}%`;
 }
 
 function friendlySourceLabel(value) {
@@ -238,6 +245,12 @@ function detailMetric(label, value, className = "") {
   return `<div class="stock-detail-metric"><span>${escapeHtml(label)}</span><strong class="${className}">${value}</strong></div>`;
 }
 
+function isEtfInstrument(item) {
+  const type = String(item?.type || item?.asset_type || "").trim().toUpperCase();
+  const ticker = String(item?.ticker || "").trim();
+  return type === "ETF" || ticker.startsWith("00");
+}
+
 function renderLots(item) {
   const lots = Array.isArray(item.lots) ? item.lots : [];
   if (!lots.length) return `<div class="empty">目前沒有可顯示的庫存批次</div>`;
@@ -355,6 +368,135 @@ function renderDataHealth(item) {
         ${detailMetric("來源", escapeHtml(friendlySourceLabel(source)))}
         ${detailMetric("日線筆數", money(item.daily_bar_count, 0))}
         ${detailMetric("最近日線", escapeHtml(shortDate(item.daily_last_date)))}
+      </div>
+    </section>`;
+}
+
+function etfHoldingsCacheKey(item) {
+  return String(item?.ticker || "").toUpperCase();
+}
+
+function sortedEtfComponents(payload) {
+  return Array.isArray(payload?.components)
+    ? [...payload.components].sort((a, b) => {
+        const orderA = numberValue(a.sort_order) ?? 9999;
+        const orderB = numberValue(b.sort_order) ?? 9999;
+        if (orderA !== orderB) return orderA - orderB;
+        return (numberValue(b.weight) || 0) - (numberValue(a.weight) || 0);
+      })
+    : [];
+}
+
+function etfHoldingsSourceLabel(value) {
+  const source = String(value || "").trim();
+  if (!source) return "N/A";
+  if (source === "synthetic_demo") return "Demo 合成資料";
+  if (source === "local_csv" || source === "local_csv_etf_holdings") return "本機 CSV";
+  return friendlySourceLabel(source);
+}
+
+function renderEtfDonut(topRows, otherWeight) {
+  const weights = topRows
+    .map((row) => Math.max(0, numberValue(row.weight) || 0))
+    .filter((value) => value > 0);
+  const other = Math.max(0, numberValue(otherWeight) || 0);
+  const total = weights.reduce((sum, value) => sum + value, 0) + other;
+  if (!total) return "";
+
+  const colors = ["#7cc4ff", "#70e1c8", "#ffd166", "#c084fc", "#ff6961", "#92a0b3"];
+  let cursor = 0;
+  const segments = weights.map((weight, index) => {
+    const start = cursor;
+    const end = cursor + (weight / total) * 360;
+    cursor = end;
+    return `${colors[index % colors.length]} ${start.toFixed(2)}deg ${end.toFixed(2)}deg`;
+  });
+  if (other > 0) {
+    segments.push(`${colors[colors.length - 1]} ${cursor.toFixed(2)}deg 360deg`);
+  }
+  return `<div class="etf-holdings-donut" style="background: conic-gradient(${segments.join(", ")});" aria-hidden="true"></div>`;
+}
+
+function renderEtfHoldingsSection(item) {
+  const key = etfHoldingsCacheKey(item);
+  if (!key) return "";
+  const cache = pageState.etfHoldingsCache[key] || { status: "idle" };
+  const isEtf = isEtfInstrument(item);
+
+  if (!isEtf && cache.status !== "loaded") return "";
+  if (!isEtf && cache.status === "loaded" && !cache.payload?.snapshot) return "";
+
+  if (cache.status === "idle" || cache.status === "loading") {
+    return isEtf ? `
+      <section class="stock-detail-section etf-holdings-card">
+        <div class="section-title stock-detail-section-title"><h2>ETF 持股組成</h2></div>
+        <div class="empty">讀取 ETF 持股資料中...</div>
+      </section>` : "";
+  }
+
+  if (cache.status === "error") {
+    return isEtf ? `
+      <section class="stock-detail-section etf-holdings-card">
+        <div class="section-title stock-detail-section-title"><h2>ETF 持股組成</h2></div>
+        <div class="empty">尚未建立持股快照</div>
+      </section>` : "";
+  }
+
+  const payload = cache.payload || {};
+  const snapshot = payload.snapshot || null;
+  const components = sortedEtfComponents(payload);
+  if (!snapshot || !components.length) {
+    return isEtf ? `
+      <section class="stock-detail-section etf-holdings-card">
+        <div class="section-title stock-detail-section-title"><h2>ETF 持股組成</h2></div>
+        <div class="empty">${escapeHtml(payload.message ? "無 ETF 持股資料" : "尚未建立持股快照")}</div>
+      </section>` : "";
+  }
+
+  const topRows = components.slice(0, 8);
+  const topWeight = topRows.reduce((sum, row) => sum + (numberValue(row.weight) || 0), 0);
+  const otherWeight = components.slice(topRows.length).reduce((sum, row) => sum + (numberValue(row.weight) || 0), 0);
+  const maxWeight = Math.max(...topRows.map((row) => numberValue(row.weight) || 0), 1);
+  const source = snapshot.source || payload.summary?.source || "";
+  const asOfDate = snapshot.as_of_date || payload.summary?.as_of_date || "";
+  const componentCount = payload.summary?.component_count ?? components.length;
+  const statusMessage = payload.message || snapshot.status || payload.data_status?.official_daily?.message || "";
+
+  return `
+    <section class="stock-detail-section etf-holdings-card">
+      <div class="section-title stock-detail-section-title">
+        <h2>ETF 持股組成</h2>
+        <span class="muted">${escapeHtml(shortDate(asOfDate))} · ${escapeHtml(etfHoldingsSourceLabel(source))}</span>
+      </div>
+      <div class="etf-holdings-summary">
+        ${renderEtfDonut(topRows.slice(0, 5), otherWeight)}
+        <div class="stock-detail-metrics compact etf-holdings-metrics">
+          ${detailMetric("快照日期", escapeHtml(shortDate(asOfDate)))}
+          ${detailMetric("來源", escapeHtml(etfHoldingsSourceLabel(source)))}
+          ${detailMetric("成分數", money(componentCount))}
+          ${detailMetric("前段權重", weightPercent(topWeight))}
+          ${detailMetric("其他權重", otherWeight > 0 ? weightPercent(otherWeight) : "N/A")}
+        </div>
+      </div>
+      ${statusMessage ? `<p class="etf-holdings-message">${escapeHtml(statusMessage)}</p>` : ""}
+      <div class="etf-holdings-list">
+        ${topRows.map((row, index) => {
+          const weight = numberValue(row.weight);
+          const width = weight === null ? 0 : Math.max(2, Math.min(100, (weight / maxWeight) * 100));
+          return `
+            <article class="etf-holding-row">
+              <div class="etf-holding-rank">${escapeHtml(row.sort_order || index + 1)}</div>
+              <div class="etf-holding-main">
+                <strong>${escapeHtml(row.constituent_ticker || "--")}</strong>
+                <span>${escapeHtml(row.constituent_name || "")}</span>
+                ${row.industry ? `<small>${escapeHtml(row.industry)}</small>` : ""}
+              </div>
+              <div class="etf-holding-weight">
+                <strong>${weightPercent(weight)}</strong>
+                <span class="etf-weight-bar"><span style="width: ${width.toFixed(2)}%;"></span></span>
+              </div>
+            </article>`;
+        }).join("")}
       </div>
     </section>`;
 }
@@ -777,6 +919,7 @@ function renderSelectedInstrument() {
       ${renderWatchNotes(item)}
       ${renderDividendSchedule(item)}
       ${renderActualDividends(item)}
+      ${renderEtfHoldingsSection(item)}
       ${renderKlineSection(item)}
 
       ${item.instrument_state === "held" ? `
@@ -839,6 +982,7 @@ function renderPage(data) {
   renderSelectedInstrument();
   loadKlineForSelected();
   loadDividendCalendarForSelected();
+  loadEtfHoldingsForSelected();
 }
 
 async function searchLocalInstruments(term) {
@@ -851,6 +995,7 @@ async function searchLocalInstruments(term) {
     renderSelectedInstrument();
     loadKlineForSelected();
     loadDividendCalendarForSelected();
+    loadEtfHoldingsForSelected();
     return;
   }
 
@@ -865,6 +1010,7 @@ async function searchLocalInstruments(term) {
   renderSelectedInstrument();
   loadKlineForSelected();
   loadDividendCalendarForSelected();
+  loadEtfHoldingsForSelected();
 }
 
 async function loadKlineForSelected() {
@@ -934,6 +1080,34 @@ async function loadDividendCalendarForSelected() {
   }
 }
 
+async function loadEtfHoldingsForSelected() {
+  const item = selectedItem();
+  if (!item?.ticker) return;
+  const key = etfHoldingsCacheKey(item);
+  const cached = pageState.etfHoldingsCache[key];
+  if (cached?.status === "loading" || cached?.status === "loaded") return;
+  pageState.etfHoldingsCache[key] = { status: "loading", payload: null };
+  renderSelectedInstrument();
+  try {
+    const response = await fetch(withToken(`/api/database/${encodeURIComponent(item.ticker)}/etf-holdings?as_of=latest`));
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    pageState.etfHoldingsCache[key] = {
+      status: "loaded",
+      payload: data || {},
+    };
+  } catch (error) {
+    pageState.etfHoldingsCache[key] = {
+      status: "error",
+      payload: null,
+      error: error.message || String(error),
+    };
+  }
+  if (etfHoldingsCacheKey(selectedItem()) === key) {
+    renderSelectedInstrument();
+  }
+}
+
 async function loadPage(force = false) {
   const button = byId("stock-detail-refresh");
   button.disabled = true;
@@ -960,6 +1134,7 @@ byId("stock-detail-search").addEventListener("input", (event) => {
   renderSelectedInstrument();
   loadKlineForSelected();
   loadDividendCalendarForSelected();
+  loadEtfHoldingsForSelected();
   searchTimer = window.setTimeout(() => {
     searchLocalInstruments(pageState.searchTerm).catch((error) => {
       byId("stock-detail-view").innerHTML = `<div class="panel empty">搜尋失敗：${escapeHtml(error.message || error)}</div>`;
@@ -972,6 +1147,7 @@ byId("stock-detail-select").addEventListener("change", (event) => {
   renderSelectedInstrument();
   loadKlineForSelected();
   loadDividendCalendarForSelected();
+  loadEtfHoldingsForSelected();
 });
 document.addEventListener("click", (event) => {
   const candle = event.target.closest("[data-kline-candle]");

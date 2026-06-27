@@ -2804,6 +2804,123 @@ h2 {
   margin-top: 10px;
 }
 
+.etf-holdings-card {
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+}
+
+.etf-holdings-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+}
+
+.etf-holdings-donut {
+  width: 96px;
+  height: 96px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 50%;
+  position: relative;
+  box-shadow: inset 0 0 0 1px rgba(2, 6, 23, 0.42);
+}
+
+.etf-holdings-donut::after {
+  content: "";
+  position: absolute;
+  inset: 24px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.etf-holdings-metrics {
+  margin-top: 0;
+}
+
+.etf-holdings-message {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.etf-holdings-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.etf-holding-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) minmax(130px, 190px);
+  align-items: center;
+  gap: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.24);
+  padding: 10px 12px;
+}
+
+.etf-holding-rank {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: rgba(124, 196, 255, 0.13);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.etf-holding-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.etf-holding-main strong {
+  color: var(--text);
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.etf-holding-main span,
+.etf-holding-main small {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.etf-holding-weight {
+  display: grid;
+  gap: 6px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.etf-holding-weight strong {
+  color: var(--source-official);
+  font-size: 14px;
+}
+
+.etf-weight-bar {
+  display: block;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+}
+
+.etf-weight-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #7cc4ff, #70e1c8);
+}
+
 .kline-ma-legend {
   display: flex;
   flex-wrap: wrap;
@@ -3011,6 +3128,10 @@ h2 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .etf-holdings-summary {
+    grid-template-columns: 1fr;
+  }
+
   .stock-detail-lot {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -3052,6 +3173,15 @@ h2 {
 
   .stock-detail-lot {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .etf-holding-row {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+
+  .etf-holding-weight {
+    grid-column: 2;
+    text-align: left;
   }
 }
 
