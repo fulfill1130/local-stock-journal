@@ -33,6 +33,9 @@ const pageState = {
     providerId: "",
     override: false,
     panelOpen: false,
+    sourcesStatus: "idle",
+    sources: [],
+    sourcesMessage: "",
     status: "idle",
     preview: null,
     previewValid: false,
@@ -555,20 +558,55 @@ function renderEtfHoldingsImportPanel(item) {
     </details>`;
 }
 
+function renderEtfProviderSourceControl(providerState) {
+  const sources = Array.isArray(providerState.sources) ? providerState.sources : [];
+  if (providerState.sourcesStatus === "loading") {
+    return `<p class="etf-provider-source-message">載入可用來源...</p>`;
+  }
+  if (!sources.length) {
+    return `<p class="etf-provider-source-message">${escapeHtml(providerState.sourcesMessage || "尚未設定此 ETF 的投信來源，可使用 CSV 匯入。")}</p>`;
+  }
+  const selected = sources.some((source) => source.provider_id === providerState.providerId)
+    ? providerState.providerId
+    : sources[0].provider_id;
+  providerState.providerId = selected;
+  return `
+    <label>
+      <span>可用來源</span>
+      <select data-etf-provider-field="providerId">
+        ${sources.map((source) => {
+          const label = source.display_name || source.provider_id;
+          const issuer = source.issuer ? ` · ${source.issuer}` : "";
+          return `<option value="${escapeHtml(source.provider_id)}" ${source.provider_id === selected ? "selected" : ""}>${escapeHtml(label + issuer)}</option>`;
+        }).join("")}
+      </select>
+    </label>`;
+}
+
 function renderEtfHoldingsProviderPanel(item) {
   if (!isEtfInstrument(item)) return "";
   const key = etfHoldingsCacheKey(item);
   const providerState = pageState.etfHoldingsProvider;
   if (providerState.ticker !== key) {
     providerState.ticker = key;
+    providerState.providerId = "";
     providerState.preview = null;
     providerState.previewValid = false;
     providerState.message = "";
     providerState.errors = [];
     providerState.warnings = [];
     providerState.status = "idle";
+    providerState.sourcesStatus = "idle";
+    providerState.sources = [];
+    providerState.sourcesMessage = "";
+  }
+  if (providerState.sourcesStatus === "idle") {
+    providerState.sourcesStatus = "loading";
+    window.setTimeout(() => loadEtfProviderSourcesForSelected(), 0);
   }
   const loading = providerState.status === "loading";
+  const sourcesLoading = providerState.sourcesStatus === "loading";
+  const hasSources = Array.isArray(providerState.sources) && providerState.sources.length > 0;
   const canConfirm = providerState.previewValid && !loading;
   const open = providerState.panelOpen || providerState.status !== "idle" || providerState.preview;
   return `
@@ -579,7 +617,8 @@ function renderEtfHoldingsProviderPanel(item) {
       </summary>
       <div class="etf-import-body">
         <div class="etf-provider-controls">
-          <label>
+          ${renderEtfProviderSourceControl(providerState)}
+          <label class="etf-provider-manual-id">
             <span>Provider ID</span>
             <input data-etf-provider-field="providerId" type="text" value="${escapeHtml(providerState.providerId || "")}" placeholder="留空使用第一個可用來源">
           </label>
@@ -589,7 +628,7 @@ function renderEtfHoldingsProviderPanel(item) {
           </label>
         </div>
         <div class="etf-import-actions">
-          <button class="icon-button" type="button" data-etf-provider-action="preview" ${loading ? "disabled" : ""}>預覽來源</button>
+          <button class="icon-button" type="button" data-etf-provider-action="preview" ${loading || sourcesLoading || !hasSources ? "disabled" : ""}>預覽來源</button>
           <button class="icon-button" type="button" data-etf-provider-action="confirm" ${canConfirm ? "" : "disabled"}>確認匯入</button>
         </div>
         ${providerState.message ? `<p class="etf-import-status">${escapeHtml(providerState.message)}</p>` : ""}
@@ -1299,6 +1338,35 @@ async function loadEtfHoldingsForSelected() {
   }
 }
 
+async function loadEtfProviderSourcesForSelected() {
+  const item = selectedItem();
+  if (!item?.ticker || !isEtfInstrument(item)) return;
+  const key = etfHoldingsCacheKey(item);
+  const providerState = pageState.etfHoldingsProvider;
+  if (providerState.ticker !== key || providerState.sourcesStatus !== "loading") return;
+  try {
+    const params = new URLSearchParams({ ticker: String(item.ticker || "").trim().toUpperCase() });
+    const response = await fetch(withToken(`/api/database/etf-holdings/providers?${params.toString()}`));
+    const data = await response.json().catch(() => ({}));
+    const sources = response.ok && data?.ok === true && Array.isArray(data.providers) ? data.providers : [];
+    providerState.sourcesStatus = "loaded";
+    providerState.sources = sources;
+    providerState.sourcesMessage = data?.message || (sources.length ? "" : "尚未設定此 ETF 的投信來源，可使用 CSV 匯入。");
+    if (!sources.some((source) => source.provider_id === providerState.providerId)) {
+      providerState.providerId = sources[0]?.provider_id || "";
+      providerState.preview = null;
+      providerState.previewValid = false;
+    }
+  } catch (error) {
+    providerState.sourcesStatus = "error";
+    providerState.sources = [];
+    providerState.sourcesMessage = "無法讀取可用投信來源，可使用 CSV 匯入。";
+  }
+  if (etfHoldingsCacheKey(selectedItem()) === key) {
+    renderSelectedInstrument();
+  }
+}
+
 function etfImportIssues(data) {
   const issues = [];
   if (Array.isArray(data?.errors)) issues.push(...data.errors);
@@ -1352,6 +1420,7 @@ function syncEtfProviderStateFromDom({ resetPreview = false } = {}) {
   const providerState = pageState.etfHoldingsProvider;
   providerState.panelOpen = Boolean(document.querySelector(".etf-provider-panel")?.open);
   fields.forEach((field) => {
+    if (field.closest(".etf-provider-manual-id")) return;
     const key = field.dataset.etfProviderField;
     if (!Object.prototype.hasOwnProperty.call(providerState, key)) return;
     providerState[key] = field.type === "checkbox" ? field.checked : field.value;
@@ -1463,6 +1532,14 @@ async function submitEtfHoldingsProvider(confirm = false) {
   if (confirm && !providerState.previewValid) {
     providerState.status = "error";
     providerState.message = "請先完成有效的來源預覽，再確認匯入。";
+    providerState.errors = [];
+    renderSelectedInstrument();
+    return;
+  }
+  if (!String(providerState.providerId || "").trim()) {
+    providerState.status = "error";
+    providerState.previewValid = false;
+    providerState.message = providerState.sourcesMessage || "尚未設定此 ETF 的投信來源，可使用 CSV 匯入。";
     providerState.errors = [];
     renderSelectedInstrument();
     return;

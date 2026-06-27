@@ -22,6 +22,9 @@ class YuantaEtfHoldingsProvider:
     tickers: tuple[str, ...] = ("0050", "0056")
     url_template: str = "https://www.yuantaetfs.com/product/detail/{ticker}/ratio"
     timeout_seconds: float = 15
+    display_name: str = ""
+    issuer: str = "Yuanta"
+    provider_type: str = "yuanta"
     fetcher: YuantaFetcher | None = None
 
     parser_version = "1"

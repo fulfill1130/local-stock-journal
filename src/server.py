@@ -1067,6 +1067,10 @@ def create_app(
         result, status_code = import_etf_holdings_csv_payload(central_db_path, payload)
         return jsonify(result), status_code
 
+    @app.get("/api/database/etf-holdings/providers")
+    def api_database_etf_holdings_providers():
+        return jsonify(etf_holdings_provider_sources_payload(project_root, request.args.get("ticker", "")))
+
     @app.post("/api/database/etf-holdings/fetch-provider")
     def api_database_etf_holdings_fetch_provider():
         payload = request.get_json(silent=True) or {}
@@ -2916,6 +2920,76 @@ def fetch_etf_holdings_provider_payload(project_root: Path, central_db_path: Pat
     response["provider"] = _safe_etf_provider_metadata(provider.provider_id, snapshot, result, errors=errors)
     response["message"] = "ETF holdings snapshot imported from configured provider."
     return response, 200
+
+
+def etf_holdings_provider_sources_payload(project_root: Path, ticker: str = "") -> dict[str, Any]:
+    normalized_ticker = str(ticker or "").strip().upper()
+    providers, config_issues = load_configured_http_etf_holdings_providers(project_root)
+    if config_issues:
+        issues = [_safe_provider_issue(issue) for issue in config_issues]
+        first_code = issues[0].get("code") if issues else ""
+        if first_code == "provider_config_missing":
+            return {
+                "ok": True,
+                "ticker": normalized_ticker,
+                "providers": [],
+                "message": "尚未設定 ETF 投信來源，可使用 CSV 匯入。",
+            }
+        return {
+            "ok": False,
+            "ticker": normalized_ticker,
+            "providers": [],
+            "message": "ETF 投信來源設定無法讀取，可使用 CSV 匯入。",
+            "errors": issues,
+        }
+
+    safe_providers = []
+    for provider in providers:
+        supported = bool(provider.supports(normalized_ticker)) if normalized_ticker else True
+        if normalized_ticker and not supported:
+            continue
+        safe_providers.append(_safe_etf_provider_source(provider, supported=supported))
+
+    message = ""
+    if not safe_providers:
+        message = (
+            "尚未設定此 ETF 的投信來源，可使用 CSV 匯入。"
+            if normalized_ticker
+            else "尚未設定 ETF 投信來源，可使用 CSV 匯入。"
+        )
+    return {
+        "ok": True,
+        "ticker": normalized_ticker,
+        "providers": safe_providers,
+        "message": message,
+    }
+
+
+def _safe_etf_provider_source(provider: Any, *, supported: bool) -> dict[str, Any]:
+    tickers = [str(item or "").strip().upper() for item in getattr(provider, "tickers", ()) if str(item or "").strip()]
+    is_all = "*" in tickers
+    ticker_match: dict[str, Any] = {"kind": "all" if is_all else "list"}
+    if not is_all:
+        ticker_match["tickers"] = tickers[:50]
+        if len(tickers) > 50:
+            ticker_match["truncated"] = True
+    provider_id = str(getattr(provider, "provider_id", "") or "").strip()
+    display_name = str(getattr(provider, "display_name", "") or "").strip() or provider_id
+    provider_type = str(getattr(provider, "provider_type", "") or "").strip().lower()
+    if not provider_type:
+        provider_type = "yuanta" if provider.__class__.__name__.lower().startswith("yuanta") else "http"
+    payload = {
+        "provider_id": provider_id,
+        "display_name": display_name,
+        "type": provider_type,
+        "status": "available" if supported else "unsupported",
+        "ticker_match": ticker_match,
+        "message": "" if supported else "此來源不支援目前選取的 ETF。",
+    }
+    issuer = str(getattr(provider, "issuer", "") or "").strip()
+    if issuer:
+        payload["issuer"] = issuer
+    return payload
 
 
 def _empty_etf_holdings_provider_response(

@@ -26,6 +26,9 @@ class ConfiguredHttpEtfHoldingsProvider:
     tickers: tuple[str, ...] = ("*",)
     source: str = "http_etf_holdings"
     public_source_url: str = ""
+    display_name: str = ""
+    issuer: str = ""
+    provider_type: str = "http"
     headers: dict[str, str] = field(default_factory=dict)
     timeout_seconds: float = 15
     cache_dir: Path | None = None
@@ -273,6 +276,8 @@ def load_configured_http_etf_holdings_providers(
                     tickers=tuple(str(item) for item in tickers) if isinstance(tickers, list) else (str(tickers),),
                     url_template=str(row.get("url_template") or "https://www.yuantaetfs.com/product/detail/{ticker}/ratio").strip(),
                     timeout_seconds=float(row.get("timeout_seconds") or 15),
+                    display_name=str(row.get("display_name") or row.get("name") or "").strip(),
+                    issuer=str(row.get("issuer") or "Yuanta").strip() or "Yuanta",
                     fetcher=yuanta_fetcher,
                 )
             )
@@ -304,6 +309,8 @@ def load_configured_http_etf_holdings_providers(
                 tickers=tuple(str(item) for item in tickers) if isinstance(tickers, list) else (str(tickers),),
                 source=str(row.get("source") or provider_id).strip() or provider_id,
                 public_source_url=str(row.get("public_source_url") or "").strip(),
+                display_name=str(row.get("display_name") or row.get("name") or "").strip(),
+                issuer=str(row.get("issuer") or "").strip(),
                 headers=headers,
                 timeout_seconds=float(row.get("timeout_seconds") or 15),
                 cache_dir=(Path(project_root) / "data" / "provider_cache" / "etf_holdings") if row.get("cache_raw") else None,

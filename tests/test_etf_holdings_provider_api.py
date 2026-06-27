@@ -53,6 +53,59 @@ class EtfHoldingsProviderApiTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["component_count"], 2)
         self.assertEqual(_snapshot_count(self.market_root), 0)
 
+    def test_provider_list_returns_safe_empty_response_when_config_missing(self) -> None:
+        response = self.client.get("/api/database/etf-holdings/providers?ticker=DEMOA")
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["providers"], [])
+        self.assertIn("CSV", payload["message"])
+
+    def test_provider_list_returns_only_safe_metadata_from_local_config(self) -> None:
+        self._write_provider_config(url="https://private.example.invalid/secret/{ticker}?token=SECRET_URL_TOKEN")
+        with patch.dict("os.environ", {"ETF_TEST_SECRET": "SECRET_HEADER_TOKEN"}):
+            response = self.client.get("/api/database/etf-holdings/providers?ticker=DEMOA")
+
+        payload = response.get_json()
+        response_text = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(len(payload["providers"]), 1)
+        self.assertEqual(payload["providers"][0]["provider_id"], "fake_live")
+        self.assertEqual(payload["providers"][0]["display_name"], "Fake ETF source")
+        self.assertEqual(payload["providers"][0]["type"], "http")
+        self.assertEqual(payload["providers"][0]["status"], "available")
+        self.assertEqual(payload["providers"][0]["ticker_match"]["tickers"], ["DEMOA"])
+        self.assertNotIn("url", payload["providers"][0])
+        self.assertNotIn("headers", payload["providers"][0])
+        self.assertNotIn("cache", response_text.lower())
+        self.assertNotIn("SECRET_URL_TOKEN", response_text)
+        self.assertNotIn("SECRET_HEADER_TOKEN", response_text)
+        self.assertNotIn("private.example.invalid", response_text)
+
+    def test_provider_list_filters_by_ticker_support(self) -> None:
+        self._write_two_provider_config()
+
+        supported = self.client.get("/api/database/etf-holdings/providers?ticker=0050").get_json()
+        unsupported = self.client.get("/api/database/etf-holdings/providers?ticker=00919").get_json()
+
+        self.assertEqual([row["provider_id"] for row in supported["providers"]], ["yuanta_test"])
+        self.assertEqual(unsupported["providers"], [])
+        self.assertIn("CSV", unsupported["message"])
+
+    def test_fetch_provider_with_unsupported_provider_id_remains_friendly(self) -> None:
+        self._write_provider_config()
+        response = self.client.post(
+            "/api/database/etf-holdings/fetch-provider",
+            json={"ticker": "OTHER", "provider_id": "fake_live", "confirm": False},
+        )
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["errors"][0]["code"], "provider_unsupported_ticker")
+
     def test_confirm_endpoint_writes_valid_provider_snapshot(self) -> None:
         self._write_provider_config()
         with patch("http_etf_holdings_provider.urlopen", return_value=_FakeResponse(_valid_csv())):
@@ -176,6 +229,8 @@ class EtfHoldingsProviderApiTests(unittest.TestCase):
                         "providers": [
                             {
                                 "provider_id": "fake_live",
+                                "display_name": "Fake ETF source",
+                                "issuer": "Synthetic Issuer",
                                 "type": "http",
                                 "url": url,
                                 "format": "csv",
@@ -184,6 +239,38 @@ class EtfHoldingsProviderApiTests(unittest.TestCase):
                                 "public_source_url": "https://provider.example/holdings",
                                 "api_key_env": "ETF_TEST_SECRET",
                             }
+                        ]
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+    def _write_two_provider_config(self) -> None:
+        config_path = self.project_root / "config" / "providers.local.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            json.dumps(
+                {
+                    "etf_holdings": {
+                        "providers": [
+                            {
+                                "provider_id": "fake_live",
+                                "display_name": "Fake ETF source",
+                                "type": "http",
+                                "url": "https://private.example.invalid/{ticker}.csv",
+                                "format": "csv",
+                                "tickers": ["DEMOA"],
+                                "source": "fake_live_source",
+                            },
+                            {
+                                "provider_id": "yuanta_test",
+                                "display_name": "Yuanta 0050",
+                                "issuer": "Yuanta",
+                                "type": "yuanta",
+                                "tickers": ["0050"],
+                            },
                         ]
                     }
                 },

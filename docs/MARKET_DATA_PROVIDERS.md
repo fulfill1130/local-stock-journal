@@ -74,7 +74,17 @@ Private live provider settings belong only in ignored local configuration:
 config/providers.local.json
 ```
 
-Safe example shape:
+Start from the committed safe template if you want the stock detail page to show a provider-source dropdown:
+
+```powershell
+copy config\providers.local.example.json config\providers.local.json
+```
+
+Then edit only the ignored local copy. The example file uses fake placeholder URLs and must not contain real keys, tokens, cookies, private URLs, or raw provider responses.
+
+The stock detail provider update panel calls `GET /api/database/etf-holdings/providers?ticker=<ticker>` to list configured sources. That endpoint returns only safe metadata such as `provider_id`, `display_name`, `type`, `issuer`, ticker support, status, and a short message. It does not return URLs, headers, API keys, cookies, tokens, local file paths, cache paths, raw responses, account/profile data, transactions, lots, or holdings.
+
+Safe local config shape:
 
 ```json
 {
@@ -110,6 +120,8 @@ Yuanta manual-trigger example:
   }
 }
 ```
+
+The dropdown only selects a configured provider. It does not fetch provider holdings on page open or when changing tickers. Provider data is fetched only when the user presses Preview, and SQLite is written only after a successful preview and explicit confirmation. Manual CSV import remains visible as the fallback when no provider is configured, a ticker is unsupported, or an issuer source changes.
 
 Do not commit API keys, authenticated URLs, cookies, private provider URLs, or raw provider responses. If raw response caching is explicitly enabled for local troubleshooting, cache files must stay under the ignored runtime path:
 

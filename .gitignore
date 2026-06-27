@@ -13,6 +13,7 @@ venv/
 !.env.example
 config/*.local.*
 config/providers.local.json
+!config/providers.local.example.json
 config/*private*
 config/*secret*
 config/*credentials*

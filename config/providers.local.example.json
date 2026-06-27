@@ -1,0 +1,22 @@
+{
+  "etf_holdings": {
+    "providers": [
+      {
+        "provider_id": "yuanta_0056",
+        "display_name": "Yuanta 0056 ETF holdings",
+        "issuer": "Yuanta",
+        "type": "yuanta",
+        "tickers": ["0056"],
+        "url_template": "https://example.invalid/yuanta-etf/{ticker}/ratio"
+      },
+      {
+        "provider_id": "yuanta_0050",
+        "display_name": "Yuanta 0050 ETF holdings",
+        "issuer": "Yuanta",
+        "type": "yuanta",
+        "tickers": ["0050"],
+        "url_template": "https://example.invalid/yuanta-etf/{ticker}/ratio"
+      }
+    ]
+  }
+}

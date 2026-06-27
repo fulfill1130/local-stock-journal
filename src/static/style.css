@@ -2962,7 +2962,8 @@ h2 {
 
 .etf-import-body textarea,
 .etf-import-body input[type="text"],
-.etf-import-body input[type="url"] {
+.etf-import-body input[type="url"],
+.etf-import-body select {
   width: 100%;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 8px;
@@ -2991,6 +2992,16 @@ h2 {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: end;
+}
+
+.etf-provider-manual-id {
+  display: none !important;
+}
+
+.etf-provider-source-message {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .etf-import-checkbox {
