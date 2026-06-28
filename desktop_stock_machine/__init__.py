@@ -1,0 +1,1 @@
+"""Desktop stock machine package."""

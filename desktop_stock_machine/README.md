@@ -1,51 +1,54 @@
 # Desktop Stock Machine
 
-Purpose:
+This folder is the clean desktop rebuild skeleton for the local-first stock
+journal and ETF research workbench.
 
-- Future home for the desktop stock machine product.
-- Final software direction for the local-first stock journal and ETF research workbench.
-- Clean rebuild area for the desktop product, separate from the legacy web prototype UI.
+It is separate from the legacy Flask web prototype. It does not import from
+legacy `src/`, does not copy the old Flask templates or static UI, and does not
+touch real data folders.
 
-What belongs here:
+## Run
 
-- Future desktop app shell, navigation, layout, and UI rebuilt from scratch.
-- Desktop-specific product planning, app lifecycle, and data-root status surfaces after future implementation tasks.
-- Desktop workflows that reuse core concepts and safety contracts without copying the current web UI.
+From the repository root:
 
-What must not belong here:
+```powershell
+python desktop_stock_machine/run_dev.py
+```
 
-- Current Flask web prototype code.
-- Legacy Flask templates/static layout imported by default.
-- Real user account data, private profiles, credentials, provider secrets, logs, backups, or raw provider responses.
-- Direct writes that bypass core/storage contracts, staging, backup, or confirmation rules.
+The development entry point prints skeleton startup and data-root status. It
+does not create `app_data/`, start a server, open a window, migrate profiles, or
+load local provider configuration.
 
-Current status:
+## Test
 
-- Placeholder/future home only.
-- No desktop runtime code has been moved or implemented here yet.
-- Packaging, installer, migration, and real-profile support remain future work.
-- Desktop shell, navigation, layout, and UI will be rebuilt from scratch.
-- Desktop work should not import or copy the legacy web UI by default.
-- Real data migration requires dry-run, backup, confirmation, and verification.
+From the repository root:
 
-What currently lives elsewhere:
+```powershell
+python -m unittest discover -s desktop_stock_machine/tests -v
+```
 
-- Demo-only desktop shell contracts and pywebview prototype code remain in the existing `src/` layout.
-- Desktop product planning docs remain under `docs/desktop_product/`.
-- Core storage and safety contracts remain under `docs/core/`.
+## Current Status
 
-Current related docs:
+- `desktop_stock_machine/app/` contains the standalone skeleton CLI, path
+  helpers, settings, and status helpers.
+- `desktop_stock_machine/frontend/` is the future desktop UI area.
+- The frontend is a simple placeholder and is not copied from the web
+  prototype.
+- Real profile support, migration, backup flows, packaging, installer work, and
+  provider fetches are not implemented yet.
 
-- [Desktop Product Track](../docs/desktop_product/README.md)
-- [Desktop Product Plan](../docs/desktop_product/PLAN.md)
+## Boundaries
+
+- Do not move legacy `src/` into this folder.
+- Do not import legacy `src/` by default.
+- Do not write real user data, private profiles, credentials, logs, backups, or
+  raw provider responses here.
+- Do not create or populate `app_data/` automatically.
+- Future real-data migration must use dry-run, backup, confirmation, and
+  verification.
+
+Related docs:
+
 - [Desktop Data Root](../docs/desktop_product/DATA_ROOT.md)
-- [Desktop Backup And Migration](../docs/desktop_product/BACKUP_MIGRATION.md)
-- [Desktop Shell Interface](../docs/DESKTOP_SHELL_INTERFACE.md)
 - [Storage Boundaries](../docs/core/STORAGE_BOUNDARIES.md)
-
-What may move here later:
-
-- Desktop app shell code, desktop navigation, desktop UI, and desktop-specific docs after planned implementation tasks.
-- Desktop packaging and installer materials after the desktop product is ready.
-
-Source/runtime movement is deferred.
+- [Legacy Web Prototype](../web_stock_machine/LEGACY_WEB_PROTOTYPE.md)
