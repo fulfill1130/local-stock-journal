@@ -2,6 +2,8 @@
 
 This index organizes project documentation before Desktop Product Track implementation. It is documentation only and does not change runtime behavior.
 
+For Codex task routing, read [Codex Context Routing](CODEX_CONTEXT.md) after `AGENTS.md`, then read only the targeted docs needed for the task.
+
 ## Core Contracts
 
 Core documents describe shared contracts that should outlive any single UI shell:

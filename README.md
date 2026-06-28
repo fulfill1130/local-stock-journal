@@ -31,6 +31,8 @@ See [Security and Privacy](docs/SECURITY_AND_PRIVACY.md) and [Disclaimer](docs/D
 
 For development notes and project direction, see [Developer Log](DEVLOG.md), [Documentation Index](docs/README.md), [Framework Direction](docs/FRAMEWORK_DIRECTION.md), and [Development Tracks](docs/DEVELOPMENT_TRACKS.md).
 
+For Codex task routing, read `AGENTS.md` first if present, then [Codex Context Routing](docs/CODEX_CONTEXT.md), then only the targeted docs needed for the task.
+
 ## Local Data Ownership
 
 Runtime data is intended to stay on the user's machine. Local directories such as `data/`, `profiles/`, `uploads/`, `output/`, and `backups/` are ignored by Git because they may contain private holdings, documents, market caches, and logs.
@@ -205,6 +207,7 @@ Some command names may change as the migration continues. Inspect `src/main.py` 
 ## Documentation
 
 - [Product Vision](docs/PRODUCT_VISION.md)
+- [Codex Context Routing](docs/CODEX_CONTEXT.md)
 - [Documentation Index](docs/README.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Data Model](docs/DATA_MODEL.md)

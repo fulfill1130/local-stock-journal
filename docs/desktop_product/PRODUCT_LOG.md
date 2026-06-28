@@ -93,3 +93,14 @@ Boundaries:
 - Runtime/source movement deferred.
 - Data folders untouched.
 - Next step should move documentation gradually before moving source code.
+
+## 2026-06-28 - Codex Context Routing Added
+
+Codex context routing added.
+
+Changes:
+
+- Inventoried and classified Markdown docs.
+- Added a compact routing file so future tasks can choose targeted docs instead of reading all docs.
+- Reinforced that the web prototype UI is not the final desktop UI.
+- Reinforced that `market_database/` is not personal account storage.
