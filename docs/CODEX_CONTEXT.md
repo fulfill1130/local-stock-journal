@@ -17,6 +17,10 @@ Do not read every Markdown file by default. Use this file to choose the smallest
 - Do not move runtime code unless a task explicitly asks for it.
 - Do not modify real `data/`, `demo_runtime/`, `app_data/`, provider cache, local config, or secrets unless explicitly asked and protected by the task.
 
+## Archive Rule
+
+`docs/archive/` contains historical/reference documents. Codex must not read `docs/archive/` by default. Only read archived docs when the task explicitly asks for migration history, old planning context, or historical audit.
+
 ## Task Routing
 
 - Desktop product task -> read `desktop_stock_machine/README.md`, `docs/desktop_product/README.md`, and the specific desktop doc named by the task.
@@ -65,7 +69,7 @@ Do not read every Markdown file by default. Use this file to choose the smallest
 | `docs/DISCLAIMER.md` | Root project | Legal/financial disclaimer. | Disclaimer or public-facing risk text tasks. |
 | `docs/PUBLIC_RELEASE_CHECKLIST.md` | Historical / reference | Public release safety checklist. | Release hygiene or publication checks. |
 | `docs/RUNTIME_CONFIG_INVENTORY.md` | Historical / reference | Runtime config/path inventory. | Config/path migration tasks. |
-| `docs/FRAMEWORK_MIGRATION_PLAN.md` | Historical / reference | Older framework migration plan. | Historical migration context is needed. |
-| `docs/MIGRATION_LOG.md` | Historical / reference | Migration handoff log. | Historical migration details are needed. |
-| `docs/OPEN_SOURCE_MIGRATION_LOG.md` | Historical / reference | Open-source migration checkpoint. | Open-source cleanup history is needed. |
+| `docs/archive/FRAMEWORK_MIGRATION_PLAN.md` | Historical / archive | Older framework migration plan. | Only explicit historical migration tasks. |
+| `docs/archive/MIGRATION_LOG.md` | Historical / archive | Migration handoff log. | Only explicit migration-history tasks. |
+| `docs/archive/OPEN_SOURCE_MIGRATION_LOG.md` | Historical / archive | Open-source migration checkpoint. | Only explicit open-source history tasks. |
 | `docs/PLUGIN_SYSTEM_DRAFT.md` | Historical / reference | Plugin system draft. | Plugin planning tasks. |

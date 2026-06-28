@@ -58,7 +58,13 @@ Provider documents describe optional data-source adapters and safety rules:
 - [Product Vision](PRODUCT_VISION.md)
 - [Roadmap](ROADMAP.md)
 - [Public Release Checklist](PUBLIC_RELEASE_CHECKLIST.md)
-- [Framework Migration Plan](FRAMEWORK_MIGRATION_PLAN.md)
-- [Migration Log](MIGRATION_LOG.md)
-- [Open Source Migration Log](OPEN_SOURCE_MIGRATION_LOG.md)
 - [Plugin System Draft](PLUGIN_SYSTEM_DRAFT.md)
+
+## Archive
+
+Archive docs are historical/reference material, not active task contracts. Codex should not read them by default.
+
+- [Archive folder](archive/)
+- [Framework Migration Plan](archive/FRAMEWORK_MIGRATION_PLAN.md)
+- [Migration Log](archive/MIGRATION_LOG.md)
+- [Open Source Migration Log](archive/OPEN_SOURCE_MIGRATION_LOG.md)
