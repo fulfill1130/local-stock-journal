@@ -70,6 +70,8 @@ Real profile support must wait until backup and dry-run rules are implemented. T
 
 Migration from old web prototype `data/` to desktop `app_data/` must be a future explicit task.
 
+For the required safety workflow, see [Desktop Backup And Migration Plan](BACKUP_MIGRATION.md).
+
 Migration must require:
 
 - Dry-run report.

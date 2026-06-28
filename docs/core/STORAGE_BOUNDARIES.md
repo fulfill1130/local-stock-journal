@@ -78,6 +78,8 @@ The desktop product will use `app_data/`.
 
 Core/storage contracts should work for both, but the two tracks must not silently share writable databases. Desktop implementation must define root selection, locking, backup, and migration behavior before real writes.
 
+Migration from web prototype runtime data into desktop `app_data/` must follow the [Desktop Backup And Migration Plan](../desktop_product/BACKUP_MIGRATION.md). It requires dry-run reporting, backup, explicit confirmation, verification, local logging, and source data preservation.
+
 ## Safe Write Policy
 
 Import, AI, plugin, provider, and corporate action outputs cannot directly write confirmed ledger data.

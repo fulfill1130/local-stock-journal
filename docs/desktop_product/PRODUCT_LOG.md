@@ -60,3 +60,19 @@ Next recommended phase:
 
 - Design the desktop shell/data-root status surface.
 - Design backup and migration manifests before real profile migration.
+
+## 2026-06-28 - Backup And Migration Planning Started
+
+Backup/migration planning started.
+
+Decisions:
+
+- Migration will require dry-run, backup, confirmation, verification, and local logging.
+- No real data migration is implemented yet.
+- Source data must remain untouched during migration.
+- Backup creation failure must block migration.
+
+Next recommended phase:
+
+- Desktop shell data-root status surface.
+- Backup dry-run design.
