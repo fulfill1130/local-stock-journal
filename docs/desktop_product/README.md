@@ -15,6 +15,7 @@ The desktop product should:
 Current documents:
 
 - [Plan](PLAN.md)
+- [Data Root](DATA_ROOT.md)
 - [Product Log](PRODUCT_LOG.md)
 - [Desktop Shell Interface](../DESKTOP_SHELL_INTERFACE.md)
 - [Desktop Data Architecture](../DESKTOP_DATA_ARCHITECTURE.md)

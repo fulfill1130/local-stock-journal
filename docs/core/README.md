@@ -22,6 +22,7 @@ Core must not depend on:
 
 Current related documents:
 
+- [Storage Boundaries](STORAGE_BOUNDARIES.md)
 - [Architecture](../ARCHITECTURE.md)
 - [Data Model](../DATA_MODEL.md)
 - [Import Pipeline](../IMPORT_PIPELINE.md)

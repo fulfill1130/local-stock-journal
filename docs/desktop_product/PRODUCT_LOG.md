@@ -44,3 +44,19 @@ Next phase:
 - Plan the `app_data/` data-root contract.
 - Plan backup and recovery before real profile migration.
 - Define desktop shell boundaries before implementing the new desktop UI.
+
+## 2026-06-28 - Desktop Data-Root Planning Started
+
+Desktop data-root planning started.
+
+Decisions:
+
+- `app_data/` is reserved as the future desktop product root.
+- Current web prototype `data/` remains separate.
+- Source-code and runtime path movement remains deferred.
+- Real-data migration requires a future dry-run report, backup, user confirmation, clear source/target paths, and rollback notes.
+
+Next recommended phase:
+
+- Design the desktop shell/data-root status surface.
+- Design backup and migration manifests before real profile migration.

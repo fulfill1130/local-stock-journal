@@ -7,6 +7,7 @@ This index organizes project documentation before Desktop Product Track implemen
 Core documents describe shared contracts that should outlive any single UI shell:
 
 - [Core README](core/README.md)
+- [Storage Boundaries](core/STORAGE_BOUNDARIES.md)
 - [Architecture](ARCHITECTURE.md)
 - [Data Model](DATA_MODEL.md)
 - [Import Pipeline](IMPORT_PIPELINE.md)
@@ -31,6 +32,7 @@ Desktop Product documents describe the final software direction:
 
 - [Desktop Product README](desktop_product/README.md)
 - [Desktop Product Plan](desktop_product/PLAN.md)
+- [Desktop Data Root](desktop_product/DATA_ROOT.md)
 - [Desktop Product Log](desktop_product/PRODUCT_LOG.md)
 - [Desktop Shell Interface](DESKTOP_SHELL_INTERFACE.md)
 - [Desktop Data Architecture](DESKTOP_DATA_ARCHITECTURE.md)

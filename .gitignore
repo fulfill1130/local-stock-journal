@@ -26,6 +26,7 @@ config/*token*
 *.key
 
 # Local runtime data and private account records
+app_data/
 data/
 data/provider_cache/
 demo_runtime/
