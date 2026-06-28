@@ -22,3 +22,27 @@ Current status:
 - Placeholder/future home only.
 - No desktop runtime code has been moved or implemented here yet.
 - Packaging, installer, migration, and real-profile support remain future work.
+- Desktop shell, navigation, layout, and UI will be rebuilt from scratch.
+- Real data migration requires dry-run, backup, confirmation, and verification.
+
+What currently lives elsewhere:
+
+- Demo-only desktop shell contracts and pywebview prototype code remain in the existing `src/` layout.
+- Desktop product planning docs remain under `docs/desktop_product/`.
+- Core storage and safety contracts remain under `docs/core/`.
+
+Current related docs:
+
+- [Desktop Product Track](../docs/desktop_product/README.md)
+- [Desktop Product Plan](../docs/desktop_product/PLAN.md)
+- [Desktop Data Root](../docs/desktop_product/DATA_ROOT.md)
+- [Desktop Backup And Migration](../docs/desktop_product/BACKUP_MIGRATION.md)
+- [Desktop Shell Interface](../docs/DESKTOP_SHELL_INTERFACE.md)
+- [Storage Boundaries](../docs/core/STORAGE_BOUNDARIES.md)
+
+What may move here later:
+
+- Desktop app shell code, desktop navigation, desktop UI, and desktop-specific docs after planned implementation tasks.
+- Desktop packaging and installer materials after the desktop product is ready.
+
+Source/runtime movement is deferred.

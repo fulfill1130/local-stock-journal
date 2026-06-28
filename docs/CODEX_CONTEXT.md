@@ -30,6 +30,8 @@ Do not read every Markdown file by default. Use this file to choose the smallest
 - Data root / backup / migration task -> read `docs/desktop_product/DATA_ROOT.md`, `docs/desktop_product/BACKUP_MIGRATION.md`, and `docs/core/STORAGE_BOUNDARIES.md` only when relevant.
 - UI task -> read only the relevant app README and task-specific UI docs. Do not read unrelated provider/storage docs unless needed.
 - Product log update task -> read only the matching `PRODUCT_LOG.md` and the task-specific plan.
+- Three-root structure task -> read the relevant top-level folder README first, then only task-specific docs.
+- Archive/history task -> read `docs/archive/` only when the task explicitly asks for history.
 
 ## Markdown Inventory
 

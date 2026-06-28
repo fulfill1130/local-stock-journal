@@ -22,3 +22,27 @@ Current status:
 - Placeholder/future home only.
 - No runtime code has been moved yet.
 - The current Flask prototype still remains in the existing source layout.
+- The web prototype remains a feature lab.
+- The web UI is not the final desktop UI.
+
+What currently lives elsewhere:
+
+- Current Flask routes and app composition remain in the existing `src/` layout.
+- Current Flask templates remain in `src/templates/`.
+- Current static assets remain in `src/static/`.
+- Current web/prototype docs remain under `docs/`.
+
+Current related docs:
+
+- [Web Prototype Track](../docs/web_prototype/README.md)
+- [Stock Detail Page Requirements](../docs/STOCK_DETAIL_PAGE_REQUIREMENTS.md)
+- [Import Pipeline](../docs/IMPORT_PIPELINE.md)
+- [Architecture](../docs/ARCHITECTURE.md)
+- [Framework Direction](../docs/FRAMEWORK_DIRECTION.md)
+
+What may move here later:
+
+- Flask-specific routes, templates, static files, and web-only docs after a planned source layout task.
+- Web prototype fixtures or examples that are not shared core contracts.
+
+Source/runtime movement is deferred.

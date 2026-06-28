@@ -49,6 +49,8 @@ The project is moving toward three top-level areas. These folders are placeholde
 
 The web prototype remains the feature lab. The desktop product will rebuild its shell, navigation, layout, and UI from scratch. Market/research data belongs in a separate boundary from personal account journals and private profile data.
 
+Runtime/source movement is deferred. Future tasks should use [Codex Context Routing](docs/CODEX_CONTEXT.md) for targeted document reading before moving docs or source code.
+
 ## Fresh-User Setup
 
 Install Python dependencies:
