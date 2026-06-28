@@ -47,7 +47,9 @@ The project is moving toward three top-level areas. These folders are placeholde
 - [desktop_stock_machine/](desktop_stock_machine/) - future home for the desktop stock machine product.
 - [market_database/](market_database/) - future home for market/research data layer concepts.
 
-The web prototype remains the feature lab. The desktop product will rebuild its shell, navigation, layout, and UI from scratch. Market/research data belongs in a separate boundary from personal account journals and private profile data.
+The current root runtime remains the legacy web prototype/reference. `main` has the `web-prototype-demo-v1` tag as a reference snapshot, and `desktop-rebuild` is the branch for desktop rebuild work.
+
+The web prototype remains the feature lab. The desktop product will rebuild its shell, navigation, layout, and UI from scratch under `desktop_stock_machine/`. Market/research data belongs in a separate boundary from personal account journals and private profile data.
 
 Runtime/source movement is deferred. Future tasks should use [Codex Context Routing](docs/CODEX_CONTEXT.md) for targeted document reading before moving docs or source code.
 

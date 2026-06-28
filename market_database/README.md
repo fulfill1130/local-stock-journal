@@ -4,6 +4,7 @@ Purpose:
 
 - Future home for market/research data layer concepts.
 - Boundary for market data, ETF research data, provider contracts, schemas, and synthetic fixtures.
+- Market/research data only; not personal ledger, profile, or portfolio storage.
 
 What belongs here:
 
@@ -16,6 +17,7 @@ What must not belong here:
 
 - Personal account journals.
 - User trades, lots, cost basis, private profiles, or real portfolio data.
+- Personal portfolio snapshots derived from private account ledgers.
 - Broker documents, credentials, provider secrets, local config, raw provider responses, logs, backups, or cache files.
 - Any final ledger write flow.
 
@@ -25,6 +27,7 @@ Current status:
 - No market database source code or runtime data has been moved yet.
 - Existing market data logic and files remain in the current source/runtime layout until a future planned migration.
 - `market_database/` is for market/research data concepts only.
+- It is not personal ledger/profile storage.
 - Provider cache is not a source of truth.
 - Confirmed ETF holdings snapshots are research data, not personal ledger data.
 

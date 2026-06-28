@@ -4,6 +4,7 @@ Purpose:
 
 - Future home for the desktop stock machine product.
 - Final software direction for the local-first stock journal and ETF research workbench.
+- Clean rebuild area for the desktop product, separate from the legacy web prototype UI.
 
 What belongs here:
 
@@ -14,6 +15,7 @@ What belongs here:
 What must not belong here:
 
 - Current Flask web prototype code.
+- Legacy Flask templates/static layout imported by default.
 - Real user account data, private profiles, credentials, provider secrets, logs, backups, or raw provider responses.
 - Direct writes that bypass core/storage contracts, staging, backup, or confirmation rules.
 
@@ -23,6 +25,7 @@ Current status:
 - No desktop runtime code has been moved or implemented here yet.
 - Packaging, installer, migration, and real-profile support remain future work.
 - Desktop shell, navigation, layout, and UI will be rebuilt from scratch.
+- Desktop work should not import or copy the legacy web UI by default.
 - Real data migration requires dry-run, backup, confirmation, and verification.
 
 What currently lives elsewhere:

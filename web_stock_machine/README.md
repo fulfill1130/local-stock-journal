@@ -21,9 +21,10 @@ Current status:
 
 - Placeholder/future home only.
 - No runtime code has been moved yet.
-- The current Flask prototype still remains in the existing source layout.
+- The current root runtime is the legacy web prototype/reference and still remains in the existing source layout.
 - The web prototype remains a feature lab.
 - The web UI is not the final desktop UI.
+- See [Legacy Web Prototype](LEGACY_WEB_PROTOTYPE.md).
 
 What currently lives elsewhere:
 
@@ -34,6 +35,7 @@ What currently lives elsewhere:
 
 Current related docs:
 
+- [Legacy Web Prototype](LEGACY_WEB_PROTOTYPE.md)
 - [Web Prototype Track](../docs/web_prototype/README.md)
 - [Stock Detail Page Requirements](../docs/STOCK_DETAIL_PAGE_REQUIREMENTS.md)
 - [Import Pipeline](../docs/IMPORT_PIPELINE.md)

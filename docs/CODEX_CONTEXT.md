@@ -31,6 +31,9 @@ Do not read every Markdown file by default. Use this file to choose the smallest
 - UI task -> read only the relevant app README and task-specific UI docs. Do not read unrelated provider/storage docs unless needed.
 - Product log update task -> read only the matching `PRODUCT_LOG.md` and the task-specific plan.
 - Three-root structure task -> read the relevant top-level folder README first, then only task-specific docs.
+- Legacy web prototype behavior task -> read `web_stock_machine/LEGACY_WEB_PROTOTYPE.md`.
+- New desktop product task -> do not read web prototype docs unless explicitly needed for reference.
+- Path migration task -> read `docs/PATH_DEPENDENCY_AUDIT.md`; do not move `src/` unless the task explicitly says to and references that audit.
 - Archive/history task -> read `docs/archive/` only when the task explicitly asks for history.
 
 ## Markdown Inventory
@@ -43,6 +46,7 @@ Do not read every Markdown file by default. Use this file to choose the smallest
 | `docs/CODEX_CONTEXT.md` | Routing / index | Compact task-to-doc routing for Codex. | Always after `AGENTS.md`. |
 | `docs/README.md` | Routing / index | Human documentation index. | Docs navigation or broad doc organization tasks. |
 | `web_stock_machine/README.md` | Placeholder / future home | Future web prototype root boundary. | Web prototype or future web folder tasks. |
+| `web_stock_machine/LEGACY_WEB_PROTOTYPE.md` | Web prototype | Legacy root runtime and web prototype reference rules. | Legacy web behavior, root runtime, or desktop-vs-web boundary tasks. |
 | `desktop_stock_machine/README.md` | Placeholder / future home | Future desktop product root boundary. | Desktop product or future desktop folder tasks. |
 | `market_database/README.md` | Placeholder / future home | Future market/research data boundary. | Market database/provider boundary tasks. |
 | `docs/core/README.md` | Core contract | Core contract section entry. | Core/storage/accounting/import contract tasks. |
