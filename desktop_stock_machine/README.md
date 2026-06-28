@@ -31,11 +31,17 @@ python -m unittest discover -s desktop_stock_machine/tests -v
 
 - `desktop_stock_machine/app/` contains the standalone skeleton CLI, path
   helpers, settings, and status helpers.
-- `desktop_stock_machine/frontend/` is the future desktop UI area.
-- The frontend is a simple placeholder and is not copied from the web
-  prototype.
+- `desktop_stock_machine/frontend/` contains the first static desktop UI shell.
+- The UI shell is a polished placeholder for overview, research tools, data
+  sources, import staging, backup safety, settings, and logs.
+- The frontend is static HTML/CSS/JavaScript, has no build system, and is not
+  copied from the web prototype.
+- It does not connect to real data, call providers, import legacy runtime code,
+  or create `app_data/`.
 - Real profile support, migration, backup flows, packaging, installer work, and
   provider fetches are not implemented yet.
+- Next implementation steps are data-root status wiring and the external tool
+  adapter contract.
 
 ## Boundaries
 

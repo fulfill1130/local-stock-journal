@@ -7,17 +7,236 @@
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
-    <main class="shell">
-      <section class="panel">
-        <p class="eyebrow">desktop-skeleton</p>
-        <h1>Desktop Stock Machine</h1>
-        <p>
-          This is the new desktop stock machine skeleton. It is a clean rebuild
-          and does not use the legacy Flask web prototype UI.
-        </p>
-        <div id="placeholder" class="status">Loading desktop placeholder...</div>
-      </section>
-    </main>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">LS</span>
+          <div>
+            <div class="brand-title">Stock Machine</div>
+            <div class="brand-subtitle">Desktop rebuild</div>
+          </div>
+        </div>
+
+        <nav class="nav-list">
+          <button class="nav-item active" type="button" data-section-target="overview">Overview</button>
+          <button class="nav-item" type="button" data-section-target="accounts">Accounts</button>
+          <button class="nav-item" type="button" data-section-target="stocks">Stocks / ETFs</button>
+          <button class="nav-item" type="button" data-section-target="research">Research Tools</button>
+          <button class="nav-item" type="button" data-section-target="imports">Import Center</button>
+          <button class="nav-item" type="button" data-section-target="sources">Data Sources</button>
+          <button class="nav-item" type="button" data-section-target="backup">Backup &amp; Restore</button>
+          <button class="nav-item" type="button" data-section-target="settings">Settings / Logs</button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <span class="signal-dot"></span>
+          Local-first shell only
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Desktop Rebuild</p>
+            <h1 id="section-title">Overview</h1>
+          </div>
+          <div class="status-strip" aria-label="Runtime status">
+            <span class="status-chip good">Demo / Skeleton mode</span>
+            <span class="status-chip muted">App data root: not connected</span>
+            <span class="status-chip muted">Legacy web prototype: reference only</span>
+            <span class="status-chip planned">Market database: planned</span>
+          </div>
+        </header>
+
+        <div class="content-grid">
+          <section class="section-stack">
+            <section class="page-section active" data-section="overview">
+              <div class="hero-panel">
+                <div>
+                  <p class="eyebrow">Local research platform</p>
+                  <h2>Desktop-first stock journal and ETF workbench</h2>
+                  <p>
+                    A clean shell for portfolio review, research adapters, market data,
+                    staged imports, and backup-aware workflows.
+                  </p>
+                </div>
+                <div class="hero-metrics" aria-label="Shell status">
+                  <div><strong>0</strong><span>real data calls</span></div>
+                  <div><strong>0</strong><span>ledger writes</span></div>
+                  <div><strong>static</strong><span>frontend only</span></div>
+                </div>
+              </div>
+
+              <div class="card-grid overview-cards">
+                <article class="card">
+                  <span class="card-icon journal">PJ</span>
+                  <h3>Portfolio Journal</h3>
+                  <p>Future account journal, holdings, lots, notes, and review surfaces.</p>
+                </article>
+                <article class="card">
+                  <span class="card-icon etf">ETF</span>
+                  <h3>ETF Holdings Lab</h3>
+                  <p>Preview provider snapshots and compare components before saving research results.</p>
+                </article>
+                <article class="card">
+                  <span class="card-icon market">DB</span>
+                  <h3>Market Database</h3>
+                  <p>Planned local market snapshots, OHLCV history, and source health views.</p>
+                </article>
+                <article class="card">
+                  <span class="card-icon tool">GH</span>
+                  <h3>External Tool Adapters</h3>
+                  <p>Adapter contracts for GitHub tools and standardized research outputs.</p>
+                </article>
+                <article class="card">
+                  <span class="card-icon import">IN</span>
+                  <h3>Import Staging</h3>
+                  <p>Safe preview, validation, and confirmation before any final record writes.</p>
+                </article>
+                <article class="card">
+                  <span class="card-icon backup">BK</span>
+                  <h3>Backup Safety</h3>
+                  <p>Dry-run and backup gates before migration, bulk import, or destructive change.</p>
+                </article>
+              </div>
+            </section>
+
+            <section class="page-section" data-section="accounts" hidden>
+              <div class="section-heading">
+                <p class="eyebrow">Journal boundary</p>
+                <h2>Accounts</h2>
+                <p>Real profiles stay blocked until data-root wiring, backup, and migration safety are ready.</p>
+              </div>
+              <div class="card-grid">
+                <article class="card"><h3>Account summaries</h3><p>Placeholder for holdings, cash movements, and journal status.</p></article>
+                <article class="card"><h3>Ledger protection</h3><p>Confirmed records will require reviewed writes through core storage contracts.</p></article>
+                <article class="card warning"><h3>Real profile support blocked</h3><p>No private account data is loaded by this UI shell.</p></article>
+              </div>
+            </section>
+
+            <section class="page-section" data-section="stocks" hidden>
+              <div class="section-heading">
+                <p class="eyebrow">Research workspace</p>
+                <h2>Stocks / ETFs</h2>
+                <p>Desktop detail views will be rebuilt here instead of copying the old web prototype pages.</p>
+              </div>
+              <div class="card-grid">
+                <article class="card"><h3>Stock detail canvas</h3><p>Future charts, lots, notes, and market context in a desktop layout.</p></article>
+                <article class="card"><h3>ETF composition view</h3><p>Future holdings snapshots with provider source and as-of metadata.</p></article>
+                <article class="card"><h3>Research result library</h3><p>Saved outputs will remain separate from confirmed personal ledger records.</p></article>
+              </div>
+            </section>
+
+            <section class="page-section" data-section="research" hidden>
+              <div class="section-heading">
+                <p class="eyebrow">Adapter platform</p>
+                <h2>Research Tools</h2>
+                <p>Future external tools will be normalized before users preview and save results.</p>
+              </div>
+
+              <div class="flow-panel">
+                <div class="flow-step">GitHub tool</div>
+                <div class="flow-arrow">to</div>
+                <div class="flow-step">Adapter</div>
+                <div class="flow-arrow">to</div>
+                <div class="flow-step">Standardized output</div>
+                <div class="flow-arrow">to</div>
+                <div class="flow-step">Preview</div>
+                <div class="flow-arrow">to</div>
+                <div class="flow-step locked">Save as research result</div>
+              </div>
+
+              <div class="chip-row">
+                <span class="status-chip planned">CSV / JSON adapter</span>
+                <span class="status-chip planned">Subprocess runner</span>
+                <span class="status-chip planned">Plugin registry planned</span>
+                <span class="status-chip danger">Ledger write blocked</span>
+              </div>
+
+              <div class="card-grid">
+                <article class="card"><h3>Tool isolation</h3><p>Adapters will translate tool outputs before anything reaches review surfaces.</p></article>
+                <article class="card"><h3>Preview first</h3><p>Generated research stays staged until explicitly saved as a research result.</p></article>
+              </div>
+            </section>
+
+            <section class="page-section" data-section="imports" hidden>
+              <div class="section-heading">
+                <p class="eyebrow">Reviewed workflow</p>
+                <h2>Import Center</h2>
+                <p>Imports will use preview, validation, and confirmation before any durable writes.</p>
+              </div>
+              <div class="card-grid">
+                <article class="card warning"><h3>Dry-run required</h3><p>Import candidates must be inspected before final acceptance.</p></article>
+                <article class="card warning"><h3>User confirmation required</h3><p>No import result should write confirmed records without explicit approval.</p></article>
+                <article class="card"><h3>Staging reports</h3><p>Future validation results will show skipped rows, warnings, and blockers.</p></article>
+              </div>
+            </section>
+
+            <section class="page-section" data-section="sources" hidden>
+              <div class="section-heading">
+                <p class="eyebrow">Market data center</p>
+                <h2>Data Sources</h2>
+                <p>Provider actions remain manual-trigger and preview-oriented in this shell.</p>
+              </div>
+              <div class="card-grid">
+                <article class="card"><h3>ETF provider preview</h3><p>Future provider fetches will preview data before confirmed snapshots.</p></article>
+                <article class="card"><h3>Manual CSV fallback</h3><p>Local files can become a controlled fallback path after validation.</p></article>
+                <article class="card"><h3>Market snapshot database</h3><p>Planned local research database for quotes, OHLCV, and snapshot metadata.</p></article>
+                <article class="card warning"><h3>Provider cache is not source of truth</h3><p>Raw cache and diagnostics stay temporary and ignored.</p></article>
+              </div>
+            </section>
+
+            <section class="page-section" data-section="backup" hidden>
+              <div class="section-heading">
+                <p class="eyebrow">Data safety</p>
+                <h2>Backup &amp; Restore</h2>
+                <p>Migration and risky writes will be blocked until the safety contract is implemented.</p>
+              </div>
+              <div class="card-grid">
+                <article class="card warning"><h3>Dry-run required</h3><p>Source and target paths must be reviewed before any migration write.</p></article>
+                <article class="card warning"><h3>Backup required</h3><p>Backup creation must succeed before migration or destructive changes.</p></article>
+                <article class="card warning"><h3>No silent migration</h3><p>The desktop product will not move web prototype data automatically.</p></article>
+              </div>
+            </section>
+
+            <section class="page-section" data-section="settings" hidden>
+              <div class="section-heading">
+                <p class="eyebrow">Configuration</p>
+                <h2>Settings / Logs</h2>
+                <p>Runtime settings are placeholders until desktop data-root status is wired.</p>
+              </div>
+              <div class="card-grid">
+                <article class="card"><h3>App data root</h3><p>Not connected. This shell does not create or populate `app_data/`.</p></article>
+                <article class="card"><h3>Legacy boundary</h3><p>The Flask web prototype remains a reference and is not imported here.</p></article>
+                <article class="card"><h3>Provider config</h3><p>No local provider configuration is loaded by the static UI.</p></article>
+              </div>
+            </section>
+          </section>
+
+          <aside class="inspector" aria-label="Status and log panel">
+            <section class="inspector-card">
+              <h2>Runtime Guardrails</h2>
+              <dl>
+                <div><dt>Mode</dt><dd>Demo / Skeleton</dd></div>
+                <div><dt>Data root</dt><dd>Not connected</dd></div>
+                <div><dt>Backend calls</dt><dd>Disabled</dd></div>
+                <div><dt>Ledger writes</dt><dd>Blocked</dd></div>
+              </dl>
+            </section>
+
+            <section class="inspector-card">
+              <h2>Shell Log</h2>
+              <ol class="log-list">
+                <li><span>10:00</span> Desktop shell initialized</li>
+                <li><span>10:00</span> Legacy web runtime not imported</li>
+                <li><span>10:00</span> app_data not created</li>
+                <li><span>10:00</span> UI shell loaded</li>
+              </ol>
+            </section>
+          </aside>
+        </div>
+      </main>
+    </div>
     <script src="app.js"></script>
   </body>
 </html>
