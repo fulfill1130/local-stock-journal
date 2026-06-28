@@ -29,7 +29,7 @@ This project is **not investment advice**. It cannot place trades, does not conn
 
 See [Security and Privacy](docs/SECURITY_AND_PRIVACY.md) and [Disclaimer](docs/DISCLAIMER.md).
 
-For development notes and project direction, see [Developer Log](DEVLOG.md), [Framework Direction](docs/FRAMEWORK_DIRECTION.md), and [Development Tracks](docs/DEVELOPMENT_TRACKS.md).
+For development notes and project direction, see [Developer Log](DEVLOG.md), [Documentation Index](docs/README.md), [Framework Direction](docs/FRAMEWORK_DIRECTION.md), and [Development Tracks](docs/DEVELOPMENT_TRACKS.md).
 
 ## Local Data Ownership
 
@@ -195,8 +195,13 @@ Some command names may change as the migration continues. Inspect `src/main.py` 
 ## Documentation
 
 - [Product Vision](docs/PRODUCT_VISION.md)
+- [Documentation Index](docs/README.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Data Model](docs/DATA_MODEL.md)
+- [Core Contracts](docs/core/README.md)
+- [Web Prototype Track](docs/web_prototype/README.md)
+- [Desktop Product Track](docs/desktop_product/README.md)
+- [Providers and Data Sources](docs/providers/README.md)
 - [Market Data Providers](docs/MARKET_DATA_PROVIDERS.md)
 - [Import Pipeline](docs/IMPORT_PIPELINE.md)
 - [Roadmap](docs/ROADMAP.md)

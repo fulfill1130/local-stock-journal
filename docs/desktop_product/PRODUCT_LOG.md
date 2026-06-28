@@ -27,3 +27,20 @@ Boundaries:
 - No real data migration.
 - No packaging or installer work.
 - No provider, import staging, accounting, market data, or desktop shell behavior changes.
+
+## 2026-06-28 - Documentation Boundaries Started
+
+Documentation boundary organization started before desktop implementation.
+
+Changes:
+
+- Added Core, Web Prototype, Desktop Product, and Providers documentation sections.
+- Moved the desktop product plan and product log under `docs/desktop_product/`.
+- Kept runtime source-code movement deferred.
+- Kept existing web prototype code, provider behavior, import staging, accounting, and desktop shell behavior unchanged.
+
+Next phase:
+
+- Plan the `app_data/` data-root contract.
+- Plan backup and recovery before real profile migration.
+- Define desktop shell boundaries before implementing the new desktop UI.

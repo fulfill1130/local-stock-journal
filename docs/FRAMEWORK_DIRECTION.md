@@ -28,6 +28,8 @@ The market data manager should help users bootstrap instruments, inspect data he
 
 The app shell should provide clearer app-style entry points for demo mode, private local use, account pages, research pages, imports, and settings. UI details may change as the shell evolves; the durable boundary is the local journal and reviewed data flow.
 
+For current documentation boundaries, see [Documentation Index](README.md), [Web Prototype Track](web_prototype/README.md), and [Desktop Product Track](desktop_product/README.md).
+
 ### Plugin Layer
 
 The plugin layer is a future extension point for external open-source analysis tools, market data adapters, importers, reports, and assistant rules. Plugins should be read-first and permission-limited by default. Any plugin that proposes ledger changes should produce reviewable staged output instead of writing directly. See [Plugin System Draft](PLUGIN_SYSTEM_DRAFT.md).

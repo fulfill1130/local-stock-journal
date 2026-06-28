@@ -28,7 +28,7 @@ Mobile support is not a priority in this track right now. The priority is provin
 
 The future goal is a Windows desktop-style app or `.exe`-style local product.
 
-The Desktop Product Track planning layer has started. See [Desktop Product Plan](DESKTOP_PRODUCT_PLAN.md) and [Desktop Product Log](DESKTOP_PRODUCT_LOG.md).
+The Desktop Product Track planning layer has started. See [Desktop Product Plan](desktop_product/PLAN.md) and [Desktop Product Log](desktop_product/PRODUCT_LOG.md).
 
 The desktop framework should be designed around:
 
