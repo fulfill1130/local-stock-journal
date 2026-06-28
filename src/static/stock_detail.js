@@ -419,20 +419,63 @@ function sortedEtfComponents(payload) {
 function etfHoldingsSourceLabel(value) {
   const source = String(value || "").trim();
   if (!source) return "N/A";
-  if (source === "synthetic_demo") return "Demo 合成資料";
-  if (source === "local_csv" || source === "local_csv_etf_holdings") return "本機 CSV";
+  const labels = {
+    fubon_assets_html: "富邦投信頁面",
+    yuanta_etfs_html: "元大投信頁面",
+    manual_csv: "手動 CSV 匯入",
+    synthetic_demo: "Demo 合成資料",
+    local_csv: "本機 CSV",
+    local_csv_etf_holdings: "本機 CSV",
+  };
+  const label = labels[source.toLowerCase()];
+  if (label) return label;
   return friendlySourceLabel(source);
 }
 
-function renderEtfDonut(topRows, otherWeight) {
-  const weights = topRows
+function isEtfStockComponentForDonut(row) {
+  const weight = numberValue(row?.weight);
+  if (weight === null || weight <= 0) return false;
+  const ticker = String(row?.constituent_ticker || "").trim();
+  const name = String(row?.constituent_name || "").trim();
+  if (!ticker && !name) return false;
+  const text = `${ticker} ${name}`.toLowerCase();
+  const nonStockTerms = [
+    "cash",
+    "fund",
+    "futures",
+    "margin",
+    "payable",
+    "receivable",
+    "現金",
+    "基金",
+    "期貨",
+    "保證金",
+    "應付",
+    "應收",
+    "其他資產",
+  ];
+  return !nonStockTerms.some((term) => text.includes(term));
+}
+
+function renderEtfDonut(rows) {
+  const weights = rows
     .map((row) => Math.max(0, numberValue(row.weight) || 0))
     .filter((value) => value > 0);
-  const other = Math.max(0, numberValue(otherWeight) || 0);
-  const total = weights.reduce((sum, value) => sum + value, 0) + other;
+  const total = weights.reduce((sum, value) => sum + value, 0);
   if (!total) return "";
 
-  const colors = ["#7cc4ff", "#70e1c8", "#ffd166", "#c084fc", "#ff6961", "#92a0b3"];
+  const colors = [
+    "#7cc4ff",
+    "#70e1c8",
+    "#ffd166",
+    "#c084fc",
+    "#ff6961",
+    "#4ade80",
+    "#f472b6",
+    "#38bdf8",
+    "#f59e0b",
+    "#a3e635",
+  ];
   let cursor = 0;
   const segments = weights.map((weight, index) => {
     const start = cursor;
@@ -440,9 +483,6 @@ function renderEtfDonut(topRows, otherWeight) {
     cursor = end;
     return `${colors[index % colors.length]} ${start.toFixed(2)}deg ${end.toFixed(2)}deg`;
   });
-  if (other > 0) {
-    segments.push(`${colors[colors.length - 1]} ${cursor.toFixed(2)}deg 360deg`);
-  }
   return `<div class="etf-holdings-donut" style="background: conic-gradient(${segments.join(", ")});" aria-hidden="true"></div>`;
 }
 
@@ -681,14 +721,14 @@ function renderEtfHoldingsSection(item) {
       </section>` : "";
   }
 
-  const topRows = components.slice(0, 8);
-  const topWeight = topRows.reduce((sum, row) => sum + (numberValue(row.weight) || 0), 0);
-  const otherWeight = components.slice(topRows.length).reduce((sum, row) => sum + (numberValue(row.weight) || 0), 0);
-  const maxWeight = Math.max(...topRows.map((row) => numberValue(row.weight) || 0), 1);
+  const donutRows = components.filter(isEtfStockComponentForDonut);
+  const stockWeight = donutRows.reduce((sum, row) => sum + (numberValue(row.weight) || 0), 0);
   const source = snapshot.source || payload.summary?.source || "";
   const asOfDate = snapshot.as_of_date || payload.summary?.as_of_date || "";
   const componentCount = payload.summary?.component_count ?? components.length;
-  const statusMessage = payload.message || snapshot.status || payload.data_status?.official_daily?.message || "";
+  const rawStatusMessage = payload.message || snapshot.message || payload.data_status?.official_daily?.message || "";
+  const statusMessage = String(rawStatusMessage || "").trim().toLowerCase() === "ok" ? "" : rawStatusMessage;
+  const visibleRows = components;
 
   return `
     <section class="stock-detail-section etf-holdings-card">
@@ -697,32 +737,30 @@ function renderEtfHoldingsSection(item) {
         <span class="muted">${escapeHtml(shortDate(asOfDate))} · ${escapeHtml(etfHoldingsSourceLabel(source))}</span>
       </div>
       <div class="etf-holdings-summary">
-        ${renderEtfDonut(topRows.slice(0, 5), otherWeight)}
+        ${renderEtfDonut(donutRows)}
         <div class="stock-detail-metrics compact etf-holdings-metrics">
           ${detailMetric("快照日期", escapeHtml(shortDate(asOfDate)))}
           ${detailMetric("來源", escapeHtml(etfHoldingsSourceLabel(source)))}
           ${detailMetric("成分數", money(componentCount))}
-          ${detailMetric("前段權重", weightPercent(topWeight))}
-          ${detailMetric("其他權重", otherWeight > 0 ? weightPercent(otherWeight) : "N/A")}
+          ${detailMetric("股票權重", weightPercent(stockWeight))}
         </div>
       </div>
       ${statusMessage ? `<p class="etf-holdings-message">${escapeHtml(statusMessage)}</p>` : ""}
+      <div class="etf-holdings-list-head">
+        <strong>持股明細</strong>
+        <span class="etf-holdings-count">共 ${escapeHtml(money(componentCount))} 檔</span>
+      </div>
       <div class="etf-holdings-list">
-        ${topRows.map((row, index) => {
+        ${visibleRows.map((row, index) => {
           const weight = numberValue(row.weight);
-          const width = weight === null ? 0 : Math.max(2, Math.min(100, (weight / maxWeight) * 100));
+          const rank = row.sort_order || index + 1;
+          const ticker = row.constituent_ticker || "--";
+          const name = row.constituent_name || "";
           return `
             <article class="etf-holding-row">
-              <div class="etf-holding-rank">${escapeHtml(row.sort_order || index + 1)}</div>
-              <div class="etf-holding-main">
-                <strong>${escapeHtml(row.constituent_ticker || "--")}</strong>
-                <span>${escapeHtml(row.constituent_name || "")}</span>
-                ${row.industry ? `<small>${escapeHtml(row.industry)}</small>` : ""}
-              </div>
-              <div class="etf-holding-weight">
-                <strong>${weightPercent(weight)}</strong>
-                <span class="etf-weight-bar"><span style="width: ${width.toFixed(2)}%;"></span></span>
-              </div>
+              <span class="etf-holding-rank">${escapeHtml(rank)}</span>
+              <span class="etf-holding-line">${escapeHtml(name || ticker)}（${escapeHtml(ticker)}）占比 ${escapeHtml(weightPercent(weight))}</span>
+              ${row.industry ? `<span class="etf-holding-industry">${escapeHtml(row.industry)}</span>` : ""}
             </article>`;
         }).join("")}
       </div>

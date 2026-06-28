@@ -2845,21 +2845,40 @@ h2 {
   line-height: 1.45;
 }
 
+.etf-holdings-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.etf-holdings-list-head strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.etf-holdings-count {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .etf-holdings-list {
   display: grid;
-  gap: 8px;
-  margin-top: 12px;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .etf-holding-row {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) minmax(130px, 190px);
+  grid-template-columns: 32px minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   border: 1px solid rgba(148, 163, 184, 0.14);
   border-radius: 8px;
   background: rgba(2, 6, 23, 0.24);
-  padding: 10px 12px;
+  padding: 8px 10px;
 }
 
 .etf-holding-rank {
@@ -2894,31 +2913,18 @@ h2 {
   overflow-wrap: anywhere;
 }
 
-.etf-holding-weight {
-  display: grid;
-  gap: 6px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.etf-holding-weight strong {
-  color: var(--source-official);
+.etf-holding-line {
+  color: var(--text);
   font-size: 14px;
+  font-weight: 750;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
-.etf-weight-bar {
-  display: block;
-  height: 7px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.16);
-}
-
-.etf-weight-bar span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #7cc4ff, #70e1c8);
+.etf-holding-industry {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .etf-import-panel {
