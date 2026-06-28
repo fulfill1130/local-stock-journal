@@ -76,3 +76,20 @@ Next recommended phase:
 
 - Desktop shell data-root status surface.
 - Backup dry-run design.
+
+## 2026-06-28 - Three-Root Project Structure Direction Started
+
+Three-root project structure direction started.
+
+Changes:
+
+- Created placeholder folders for `web_stock_machine/`, `desktop_stock_machine/`, and `market_database/`.
+- Documented that the web stock machine remains the feature lab.
+- Documented that the desktop stock machine is the future product home.
+- Documented that `market_database/` is for market/research data concepts only, not personal account data.
+
+Boundaries:
+
+- Runtime/source movement deferred.
+- Data folders untouched.
+- Next step should move documentation gradually before moving source code.

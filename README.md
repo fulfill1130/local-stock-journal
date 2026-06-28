@@ -37,6 +37,16 @@ Runtime data is intended to stay on the user's machine. Local directories such a
 
 The public repository should contain source code, tests, docs, and synthetic examples only.
 
+## Project Structure Direction
+
+The project is moving toward three top-level areas. These folders are placeholders for future separation; no runtime source code has been moved yet.
+
+- [web_stock_machine/](web_stock_machine/) - future home for the web prototype / Flask stock machine.
+- [desktop_stock_machine/](desktop_stock_machine/) - future home for the desktop stock machine product.
+- [market_database/](market_database/) - future home for market/research data layer concepts.
+
+The web prototype remains the feature lab. The desktop product will rebuild its shell, navigation, layout, and UI from scratch. Market/research data belongs in a separate boundary from personal account journals and private profile data.
+
 ## Fresh-User Setup
 
 Install Python dependencies:
