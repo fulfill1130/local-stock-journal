@@ -61,8 +61,8 @@ no backend calls, and no file writes.
 - [`market_database/`](market_database/) - future market/research data concepts.
 
 The web prototype snapshot is preserved by the `web-prototype-demo-v1` tag. A
-`web-prototype-reference` branch points to that same reference snapshot so the
-old web draft remains easy to find.
+`web-prototype-demo` branch points to that same reference snapshot so the old
+web draft remains easy to find without being the project homepage.
 
 ## Safety Boundaries
 
@@ -88,8 +88,8 @@ The root `src/` runtime remains the legacy Flask web prototype/reference. It is
 not the final desktop architecture and should not be copied into
 `desktop_stock_machine/` by default.
 
-For reference-only web prototype commands, use the `web-prototype-reference`
-branch or the `web-prototype-demo-v1` tag.
+For reference-only web prototype commands, use the `web-prototype-demo` branch
+or the `web-prototype-demo-v1` tag.
 
 ## Documentation
 
