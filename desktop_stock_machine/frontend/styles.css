@@ -335,6 +335,59 @@ body {
   font-size: 14px;
 }
 
+.settings-grid {
+  align-items: stretch;
+}
+
+.settings-card {
+  grid-column: span 2;
+}
+
+.language-control {
+  display: inline-flex;
+  gap: 8px;
+  margin-top: 18px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #101722;
+  padding: 6px;
+}
+
+.language-button {
+  min-height: 34px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--soft);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 7px 12px;
+}
+
+.language-button:hover,
+.language-button:focus-visible {
+  border-color: var(--line);
+  color: var(--text);
+  outline: none;
+}
+
+.language-button.active {
+  border-color: rgb(78 161 255 / 52%);
+  background: #132339;
+  color: #dcecff;
+}
+
+.setting-note {
+  margin-top: 14px !important;
+  font-size: 13px !important;
+}
+
+.setting-note strong {
+  color: var(--text);
+}
+
 .card-icon {
   display: inline-grid;
   width: 42px;
@@ -464,9 +517,13 @@ body {
   font-size: 13px;
 }
 
-.log-list span {
+.log-list li > span:first-child {
   color: var(--cyan);
   font-weight: 800;
+}
+
+.log-list li > span:last-child {
+  color: var(--soft);
 }
 
 [hidden] {
@@ -521,8 +578,10 @@ body {
   .nav-list,
   .card-grid,
   .overview-cards,
+  .settings-card,
   .inspector {
     grid-template-columns: 1fr;
+    grid-column: auto;
   }
 
   .flow-panel {

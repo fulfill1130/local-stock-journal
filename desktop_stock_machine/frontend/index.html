@@ -1,50 +1,50 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-Hant">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Desktop Stock Machine</title>
+    <title>桌面股票機</title>
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
     <div class="app-shell">
-      <aside class="sidebar" aria-label="Primary navigation">
+      <aside class="sidebar" aria-label="主要導覽">
         <div class="brand">
           <span class="brand-mark" aria-hidden="true">LS</span>
           <div>
-            <div class="brand-title">Stock Machine</div>
-            <div class="brand-subtitle">Desktop rebuild</div>
+            <div class="brand-title" data-i18n="brand.title">股票機</div>
+            <div class="brand-subtitle" data-i18n="brand.subtitle">桌面重建</div>
           </div>
         </div>
 
         <nav class="nav-list">
-          <button class="nav-item active" type="button" data-section-target="overview">Overview</button>
-          <button class="nav-item" type="button" data-section-target="accounts">Accounts</button>
-          <button class="nav-item" type="button" data-section-target="stocks">Stocks / ETFs</button>
-          <button class="nav-item" type="button" data-section-target="research">Research Tools</button>
-          <button class="nav-item" type="button" data-section-target="imports">Import Center</button>
-          <button class="nav-item" type="button" data-section-target="sources">Data Sources</button>
-          <button class="nav-item" type="button" data-section-target="backup">Backup &amp; Restore</button>
-          <button class="nav-item" type="button" data-section-target="settings">Settings / Logs</button>
+          <button class="nav-item active" type="button" data-section-target="overview" data-i18n="nav.overview">總覽</button>
+          <button class="nav-item" type="button" data-section-target="accounts" data-i18n="nav.accounts">帳戶</button>
+          <button class="nav-item" type="button" data-section-target="stocks" data-i18n="nav.stocks">股票 / ETF</button>
+          <button class="nav-item" type="button" data-section-target="research" data-i18n="nav.research">研究工具</button>
+          <button class="nav-item" type="button" data-section-target="imports" data-i18n="nav.imports">匯入中心</button>
+          <button class="nav-item" type="button" data-section-target="sources" data-i18n="nav.sources">資料來源</button>
+          <button class="nav-item" type="button" data-section-target="backup" data-i18n="nav.backup">備份與還原</button>
+          <button class="nav-item" type="button" data-section-target="settings" data-i18n="nav.settings">設定 / 紀錄</button>
         </nav>
 
         <div class="sidebar-footer">
           <span class="signal-dot"></span>
-          Local-first shell only
+          <span data-i18n="sidebar.footer">僅限本機優先介面</span>
         </div>
       </aside>
 
       <main class="workspace">
         <header class="topbar">
           <div>
-            <p class="eyebrow">Desktop Rebuild</p>
-            <h1 id="section-title">Overview</h1>
+            <p class="eyebrow" data-i18n="top.eyebrow">桌面版重建</p>
+            <h1 id="section-title">總覽</h1>
           </div>
-          <div class="status-strip" aria-label="Runtime status">
-            <span class="status-chip good">Demo / Skeleton mode</span>
-            <span class="status-chip muted">App data root: not connected</span>
-            <span class="status-chip muted">Legacy web prototype: reference only</span>
-            <span class="status-chip planned">Market database: planned</span>
+          <div class="status-strip" aria-label="執行狀態">
+            <span class="status-chip good" data-i18n="status.mode">示範 / 骨架模式</span>
+            <span class="status-chip muted" data-i18n="status.dataRoot">應用程式資料根目錄：尚未連線</span>
+            <span class="status-chip muted" data-i18n="status.legacy">網頁版原型：僅供參考</span>
+            <span class="status-chip planned" data-i18n="status.market">市場資料庫：規劃中</span>
           </div>
         </header>
 
@@ -53,184 +53,192 @@
             <section class="page-section active" data-section="overview">
               <div class="hero-panel">
                 <div>
-                  <p class="eyebrow">Local research platform</p>
-                  <h2>Desktop-first stock journal and ETF workbench</h2>
-                  <p>
-                    A clean shell for portfolio review, research adapters, market data,
-                    staged imports, and backup-aware workflows.
+                  <p class="eyebrow" data-i18n="overview.eyebrow">本機研究平台</p>
+                  <h2 data-i18n="overview.title">桌面優先的股票日誌與 ETF 研究工作台</h2>
+                  <p data-i18n="overview.body">
+                    這是一個乾淨的桌面版外殼，未來用於投資組合檢視、研究工具轉接、市場資料、匯入暫存，以及有備份保護的流程。
                   </p>
                 </div>
-                <div class="hero-metrics" aria-label="Shell status">
-                  <div><strong>0</strong><span>real data calls</span></div>
-                  <div><strong>0</strong><span>ledger writes</span></div>
-                  <div><strong>static</strong><span>frontend only</span></div>
+                <div class="hero-metrics" aria-label="外殼狀態">
+                  <div><strong>0</strong><span data-i18n="metric.realCalls">真實資料存取</span></div>
+                  <div><strong>0</strong><span data-i18n="metric.ledgerWrites">帳本寫入</span></div>
+                  <div><strong data-i18n="metric.staticValue">靜態</strong><span data-i18n="metric.frontendOnly">僅前端介面</span></div>
                 </div>
               </div>
 
               <div class="card-grid overview-cards">
                 <article class="card">
                   <span class="card-icon journal">PJ</span>
-                  <h3>Portfolio Journal</h3>
-                  <p>Future account journal, holdings, lots, notes, and review surfaces.</p>
+                  <h3 data-i18n="card.journal.title">投資組合日誌</h3>
+                  <p data-i18n="card.journal.body">未來放帳戶日誌、持股、庫存、筆記與檢視介面。</p>
                 </article>
                 <article class="card">
                   <span class="card-icon etf">ETF</span>
-                  <h3>ETF Holdings Lab</h3>
-                  <p>Preview provider snapshots and compare components before saving research results.</p>
+                  <h3 data-i18n="card.etf.title">ETF 持股實驗室</h3>
+                  <p data-i18n="card.etf.body">先預覽供應商資料與成分股，再存成研究結果。</p>
                 </article>
                 <article class="card">
                   <span class="card-icon market">DB</span>
-                  <h3>Market Database</h3>
-                  <p>Planned local market snapshots, OHLCV history, and source health views.</p>
+                  <h3 data-i18n="card.market.title">市場資料庫</h3>
+                  <p data-i18n="card.market.body">規劃中的本機市場快照、OHLCV 歷史與資料來源健康狀態。</p>
                 </article>
                 <article class="card">
                   <span class="card-icon tool">GH</span>
-                  <h3>External Tool Adapters</h3>
-                  <p>Adapter contracts for GitHub tools and standardized research outputs.</p>
+                  <h3 data-i18n="card.adapters.title">外部工具轉接</h3>
+                  <p data-i18n="card.adapters.body">替 GitHub 工具與其他外部工具建立標準化輸出合約。</p>
                 </article>
                 <article class="card">
                   <span class="card-icon import">IN</span>
-                  <h3>Import Staging</h3>
-                  <p>Safe preview, validation, and confirmation before any final record writes.</p>
+                  <h3 data-i18n="card.import.title">匯入暫存</h3>
+                  <p data-i18n="card.import.body">所有匯入先預覽、驗證、確認，再允許寫入正式資料。</p>
                 </article>
                 <article class="card">
                   <span class="card-icon backup">BK</span>
-                  <h3>Backup Safety</h3>
-                  <p>Dry-run and backup gates before migration, bulk import, or destructive change.</p>
+                  <h3 data-i18n="card.backup.title">備份安全</h3>
+                  <p data-i18n="card.backup.body">遷移、批次匯入或破壞性變更前，必須先 dry-run 與備份。</p>
                 </article>
               </div>
             </section>
 
             <section class="page-section" data-section="accounts" hidden>
               <div class="section-heading">
-                <p class="eyebrow">Journal boundary</p>
-                <h2>Accounts</h2>
-                <p>Real profiles stay blocked until data-root wiring, backup, and migration safety are ready.</p>
+                <p class="eyebrow" data-i18n="accounts.eyebrow">帳務邊界</p>
+                <h2 data-i18n="accounts.title">帳戶</h2>
+                <p data-i18n="accounts.body">真實 profile 會先保持封鎖，直到 data root、備份與遷移安全規則完成。</p>
               </div>
               <div class="card-grid">
-                <article class="card"><h3>Account summaries</h3><p>Placeholder for holdings, cash movements, and journal status.</p></article>
-                <article class="card"><h3>Ledger protection</h3><p>Confirmed records will require reviewed writes through core storage contracts.</p></article>
-                <article class="card warning"><h3>Real profile support blocked</h3><p>No private account data is loaded by this UI shell.</p></article>
+                <article class="card"><h3 data-i18n="accounts.summary.title">帳戶摘要</h3><p data-i18n="accounts.summary.body">未來顯示持股、現金流與日誌狀態。</p></article>
+                <article class="card"><h3 data-i18n="accounts.guard.title">帳本保護</h3><p data-i18n="accounts.guard.body">確認資料必須透過 core storage 合約與審核寫入流程。</p></article>
+                <article class="card warning"><h3 data-i18n="accounts.blocked.title">真實 profile 尚未啟用</h3><p data-i18n="accounts.blocked.body">這個 UI shell 不會載入私人帳戶資料。</p></article>
               </div>
             </section>
 
             <section class="page-section" data-section="stocks" hidden>
               <div class="section-heading">
-                <p class="eyebrow">Research workspace</p>
-                <h2>Stocks / ETFs</h2>
-                <p>Desktop detail views will be rebuilt here instead of copying the old web prototype pages.</p>
+                <p class="eyebrow" data-i18n="stocks.eyebrow">研究工作區</p>
+                <h2 data-i18n="stocks.title">股票 / ETF</h2>
+                <p data-i18n="stocks.body">桌面版個股與 ETF 詳細頁會在這裡重做，不複製舊網頁版頁面。</p>
               </div>
               <div class="card-grid">
-                <article class="card"><h3>Stock detail canvas</h3><p>Future charts, lots, notes, and market context in a desktop layout.</p></article>
-                <article class="card"><h3>ETF composition view</h3><p>Future holdings snapshots with provider source and as-of metadata.</p></article>
-                <article class="card"><h3>Research result library</h3><p>Saved outputs will remain separate from confirmed personal ledger records.</p></article>
+                <article class="card"><h3 data-i18n="stocks.canvas.title">個股詳情畫布</h3><p data-i18n="stocks.canvas.body">未來放圖表、庫存、筆記與市場脈絡。</p></article>
+                <article class="card"><h3 data-i18n="stocks.etf.title">ETF 成分檢視</h3><p data-i18n="stocks.etf.body">未來顯示持股快照、資料來源、快照日期與中繼資料。</p></article>
+                <article class="card"><h3 data-i18n="stocks.library.title">研究結果庫</h3><p data-i18n="stocks.library.body">儲存的研究輸出會和個人確認帳本分開。</p></article>
               </div>
             </section>
 
             <section class="page-section" data-section="research" hidden>
               <div class="section-heading">
-                <p class="eyebrow">Adapter platform</p>
-                <h2>Research Tools</h2>
-                <p>Future external tools will be normalized before users preview and save results.</p>
+                <p class="eyebrow" data-i18n="research.eyebrow">轉接平台</p>
+                <h2 data-i18n="research.title">研究工具</h2>
+                <p data-i18n="research.body">未來外部工具輸出會先標準化，使用者預覽後才存成研究結果。</p>
               </div>
 
               <div class="flow-panel">
-                <div class="flow-step">GitHub tool</div>
-                <div class="flow-arrow">to</div>
-                <div class="flow-step">Adapter</div>
-                <div class="flow-arrow">to</div>
-                <div class="flow-step">Standardized output</div>
-                <div class="flow-arrow">to</div>
-                <div class="flow-step">Preview</div>
-                <div class="flow-arrow">to</div>
-                <div class="flow-step locked">Save as research result</div>
+                <div class="flow-step" data-i18n="flow.github">GitHub 工具</div>
+                <div class="flow-arrow" data-i18n="flow.to">到</div>
+                <div class="flow-step" data-i18n="flow.adapter">轉接器</div>
+                <div class="flow-arrow" data-i18n="flow.to">到</div>
+                <div class="flow-step" data-i18n="flow.output">標準化輸出</div>
+                <div class="flow-arrow" data-i18n="flow.to">到</div>
+                <div class="flow-step" data-i18n="flow.preview">預覽</div>
+                <div class="flow-arrow" data-i18n="flow.to">到</div>
+                <div class="flow-step locked" data-i18n="flow.save">存成研究結果</div>
               </div>
 
               <div class="chip-row">
-                <span class="status-chip planned">CSV / JSON adapter</span>
-                <span class="status-chip planned">Subprocess runner</span>
-                <span class="status-chip planned">Plugin registry planned</span>
-                <span class="status-chip danger">Ledger write blocked</span>
+                <span class="status-chip planned" data-i18n="research.chip.csv">CSV / JSON 轉接器</span>
+                <span class="status-chip planned" data-i18n="research.chip.runner">子程序執行器</span>
+                <span class="status-chip planned" data-i18n="research.chip.registry">外掛登錄表規劃中</span>
+                <span class="status-chip danger" data-i18n="research.chip.blocked">帳本寫入封鎖</span>
               </div>
 
               <div class="card-grid">
-                <article class="card"><h3>Tool isolation</h3><p>Adapters will translate tool outputs before anything reaches review surfaces.</p></article>
-                <article class="card"><h3>Preview first</h3><p>Generated research stays staged until explicitly saved as a research result.</p></article>
+                <article class="card"><h3 data-i18n="research.isolation.title">工具隔離</h3><p data-i18n="research.isolation.body">外部工具輸出必須先經過轉接器，才會進入審核畫面。</p></article>
+                <article class="card"><h3 data-i18n="research.preview.title">先預覽</h3><p data-i18n="research.preview.body">產生的研究資料會先停在暫存狀態，明確確認後才保存。</p></article>
               </div>
             </section>
 
             <section class="page-section" data-section="imports" hidden>
               <div class="section-heading">
-                <p class="eyebrow">Reviewed workflow</p>
-                <h2>Import Center</h2>
-                <p>Imports will use preview, validation, and confirmation before any durable writes.</p>
+                <p class="eyebrow" data-i18n="imports.eyebrow">審核流程</p>
+                <h2 data-i18n="imports.title">匯入中心</h2>
+                <p data-i18n="imports.body">匯入資料會先預覽、驗證、確認，再允許持久寫入。</p>
               </div>
               <div class="card-grid">
-                <article class="card warning"><h3>Dry-run required</h3><p>Import candidates must be inspected before final acceptance.</p></article>
-                <article class="card warning"><h3>User confirmation required</h3><p>No import result should write confirmed records without explicit approval.</p></article>
-                <article class="card"><h3>Staging reports</h3><p>Future validation results will show skipped rows, warnings, and blockers.</p></article>
+                <article class="card warning"><h3 data-i18n="imports.dryRun.title">必須 dry-run</h3><p data-i18n="imports.dryRun.body">匯入候選資料必須先檢查，不能直接接受。</p></article>
+                <article class="card warning"><h3 data-i18n="imports.confirm.title">需要使用者確認</h3><p data-i18n="imports.confirm.body">沒有明確同意前，匯入結果不能寫入確認資料。</p></article>
+                <article class="card"><h3 data-i18n="imports.report.title">暫存報告</h3><p data-i18n="imports.report.body">未來會顯示略過列、警告與阻擋原因。</p></article>
               </div>
             </section>
 
             <section class="page-section" data-section="sources" hidden>
               <div class="section-heading">
-                <p class="eyebrow">Market data center</p>
-                <h2>Data Sources</h2>
-                <p>Provider actions remain manual-trigger and preview-oriented in this shell.</p>
+                <p class="eyebrow" data-i18n="sources.eyebrow">市場資料中心</p>
+                <h2 data-i18n="sources.title">資料來源</h2>
+                <p data-i18n="sources.body">供應商動作會維持手動觸發，並以預覽流程為主。</p>
               </div>
               <div class="card-grid">
-                <article class="card"><h3>ETF provider preview</h3><p>Future provider fetches will preview data before confirmed snapshots.</p></article>
-                <article class="card"><h3>Manual CSV fallback</h3><p>Local files can become a controlled fallback path after validation.</p></article>
-                <article class="card"><h3>Market snapshot database</h3><p>Planned local research database for quotes, OHLCV, and snapshot metadata.</p></article>
-                <article class="card warning"><h3>Provider cache is not source of truth</h3><p>Raw cache and diagnostics stay temporary and ignored.</p></article>
+                <article class="card"><h3 data-i18n="sources.etf.title">ETF 供應商預覽</h3><p data-i18n="sources.etf.body">未來供應商抓取會先預覽，再確認成快照。</p></article>
+                <article class="card"><h3 data-i18n="sources.csv.title">手動 CSV 備援</h3><p data-i18n="sources.csv.body">本機檔案可在驗證後成為受控備援路徑。</p></article>
+                <article class="card"><h3 data-i18n="sources.snapshot.title">市場快照資料庫</h3><p data-i18n="sources.snapshot.body">規劃中的本機研究資料庫，保存報價、OHLCV 與 metadata。</p></article>
+                <article class="card warning"><h3 data-i18n="sources.cache.title">Provider cache 不是事實來源</h3><p data-i18n="sources.cache.body">raw cache 與診斷資料只能暫存，且必須被忽略。</p></article>
               </div>
             </section>
 
             <section class="page-section" data-section="backup" hidden>
               <div class="section-heading">
-                <p class="eyebrow">Data safety</p>
-                <h2>Backup &amp; Restore</h2>
-                <p>Migration and risky writes will be blocked until the safety contract is implemented.</p>
+                <p class="eyebrow" data-i18n="backup.eyebrow">資料安全</p>
+                <h2 data-i18n="backup.title">備份與還原</h2>
+                <p data-i18n="backup.body">遷移與高風險寫入會先封鎖，直到安全合約完成。</p>
               </div>
               <div class="card-grid">
-                <article class="card warning"><h3>Dry-run required</h3><p>Source and target paths must be reviewed before any migration write.</p></article>
-                <article class="card warning"><h3>Backup required</h3><p>Backup creation must succeed before migration or destructive changes.</p></article>
-                <article class="card warning"><h3>No silent migration</h3><p>The desktop product will not move web prototype data automatically.</p></article>
+                <article class="card warning"><h3 data-i18n="backup.dryRun.title">必須 dry-run</h3><p data-i18n="backup.dryRun.body">任何遷移寫入前都要先檢查來源與目標路徑。</p></article>
+                <article class="card warning"><h3 data-i18n="backup.required.title">必須備份</h3><p data-i18n="backup.required.body">備份建立成功後，才可以進行遷移或破壞性變更。</p></article>
+                <article class="card warning"><h3 data-i18n="backup.silent.title">不允許靜默遷移</h3><p data-i18n="backup.silent.body">桌面版不會自動搬動網頁版 prototype 的資料。</p></article>
               </div>
             </section>
 
             <section class="page-section" data-section="settings" hidden>
               <div class="section-heading">
-                <p class="eyebrow">Configuration</p>
-                <h2>Settings / Logs</h2>
-                <p>Runtime settings are placeholders until desktop data-root status is wired.</p>
+                <p class="eyebrow" data-i18n="settings.eyebrow">偏好設定</p>
+                <h2 data-i18n="settings.title">設定 / 紀錄</h2>
+                <p data-i18n="settings.body">目前只有靜態設定介面；未來會接上資料根目錄狀態與桌面設定檔。</p>
               </div>
-              <div class="card-grid">
-                <article class="card"><h3>App data root</h3><p>Not connected. This shell does not create or populate `app_data/`.</p></article>
-                <article class="card"><h3>Legacy boundary</h3><p>The Flask web prototype remains a reference and is not imported here.</p></article>
-                <article class="card"><h3>Provider config</h3><p>No local provider configuration is loaded by the static UI.</p></article>
+              <div class="card-grid settings-grid">
+                <article class="card settings-card">
+                  <h3 data-i18n="settings.language.title">介面語言</h3>
+                  <p data-i18n="settings.language.body">語言切換只影響目前畫面，現在不會寫入檔案或瀏覽器儲存空間。</p>
+                  <div class="language-control" aria-label="介面語言">
+                    <button class="language-button active" type="button" data-lang-option="zh-Hant" aria-pressed="true" data-i18n="settings.language.zh">繁體中文</button>
+                    <button class="language-button" type="button" data-lang-option="en" aria-pressed="false" data-i18n="settings.language.en">English</button>
+                  </div>
+                  <p class="setting-note"><span data-i18n="settings.language.currentLabel">目前語言：</span><strong data-language-label>繁體中文</strong></p>
+                </article>
+                <article class="card"><h3 data-i18n="settings.dataRoot.title">應用程式資料根目錄</h3><p data-i18n="settings.dataRoot.body">尚未連線。這個介面外殼不會建立或填入 `app_data/`。</p></article>
+                <article class="card"><h3 data-i18n="settings.legacy.title">舊版邊界</h3><p data-i18n="settings.legacy.body">Flask 網頁版原型僅作參考，這裡不會匯入。</p></article>
+                <article class="card"><h3 data-i18n="settings.provider.title">資料供應商設定</h3><p data-i18n="settings.provider.body">靜態介面不會讀取本機供應商設定。</p></article>
               </div>
             </section>
           </section>
 
-          <aside class="inspector" aria-label="Status and log panel">
+          <aside class="inspector" aria-label="狀態與紀錄面板">
             <section class="inspector-card">
-              <h2>Runtime Guardrails</h2>
+              <h2 data-i18n="inspector.guardrails">執行防護</h2>
               <dl>
-                <div><dt>Mode</dt><dd>Demo / Skeleton</dd></div>
-                <div><dt>Data root</dt><dd>Not connected</dd></div>
-                <div><dt>Backend calls</dt><dd>Disabled</dd></div>
-                <div><dt>Ledger writes</dt><dd>Blocked</dd></div>
+                <div><dt data-i18n="guard.mode">模式</dt><dd data-i18n="guard.modeValue">示範 / 骨架</dd></div>
+                <div><dt data-i18n="guard.dataRoot">資料根目錄</dt><dd data-i18n="guard.dataRootValue">尚未連線</dd></div>
+                <div><dt data-i18n="guard.backend">後端呼叫</dt><dd data-i18n="guard.backendValue">停用</dd></div>
+                <div><dt data-i18n="guard.ledger">帳本寫入</dt><dd data-i18n="guard.ledgerValue">封鎖</dd></div>
               </dl>
             </section>
 
             <section class="inspector-card">
-              <h2>Shell Log</h2>
+              <h2 data-i18n="inspector.log">外殼紀錄</h2>
               <ol class="log-list">
-                <li><span>10:00</span> Desktop shell initialized</li>
-                <li><span>10:00</span> Legacy web runtime not imported</li>
-                <li><span>10:00</span> app_data not created</li>
-                <li><span>10:00</span> UI shell loaded</li>
+                <li><span>10:00</span> <span data-i18n="log.initialized">桌面外殼已初始化</span></li>
+                <li><span>10:00</span> <span data-i18n="log.legacy">未匯入舊網頁版執行環境</span></li>
+                <li><span>10:00</span> <span data-i18n="log.appData">未建立 app_data</span></li>
+                <li><span>10:00</span> <span data-i18n="log.loaded">介面外殼已載入</span></li>
               </ol>
             </section>
           </aside>

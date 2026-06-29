@@ -34,6 +34,9 @@ python -m unittest discover -s desktop_stock_machine/tests -v
 - `desktop_stock_machine/frontend/` contains the first static desktop UI shell.
 - The UI shell is a polished placeholder for overview, research tools, data
   sources, import staging, backup safety, settings, and logs.
+- Settings currently include a static interface-language switch for Traditional
+  Chinese and English. The switch only changes the current page and does not
+  write files or browser storage.
 - The frontend is static HTML/CSS/JavaScript, has no build system, and is not
   copied from the web prototype.
 - It does not connect to real data, call providers, import legacy runtime code,
