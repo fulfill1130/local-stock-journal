@@ -58,6 +58,23 @@ desktop_stock_machine/open_ui.cmd
 The UI is static HTML/CSS/JavaScript. It has no npm, no bundler, no external CDN,
 no backend calls, and no file writes.
 
+## Build The Desktop EXE
+
+```powershell
+python -m pip install -r requirements-desktop.txt
+powershell -ExecutionPolicy Bypass -File desktop_stock_machine/build_exe.ps1
+```
+
+The executable is created at:
+
+```text
+output/desktop_exe/dist/DesktopStockMachine.exe
+```
+
+The `.exe` packages the UI shell only. User data, databases, provider cache,
+logs, backups, local config, and future `app_data/` contents stay outside the
+executable.
+
 ## Track Layout
 
 - [`desktop_stock_machine/`](desktop_stock_machine/) - main desktop product

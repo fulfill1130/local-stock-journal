@@ -31,6 +31,30 @@ The launcher opens `desktop_stock_machine/frontend/index.html` in the default
 browser. It does not start a server, write files, create `app_data/`, or connect
 to real data.
 
+## Build The EXE
+
+Install desktop/build dependencies:
+
+```powershell
+python -m pip install -r requirements-desktop.txt
+```
+
+Build the Windows executable:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File desktop_stock_machine/build_exe.ps1
+```
+
+The build creates:
+
+```text
+output/desktop_exe/dist/DesktopStockMachine.exe
+```
+
+The executable packages only the desktop UI shell and bundled frontend assets.
+It does not package real data, `data/`, `demo_runtime/`, `app_data/`, backups,
+provider cache, logs, local config, or `config/providers.local.json`.
+
 ## Test
 
 From the repository root:
