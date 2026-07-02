@@ -19,6 +19,18 @@ The development entry point prints skeleton startup and data-root status. It
 does not create `app_data/`, start a server, open a window, migrate profiles, or
 load local provider configuration.
 
+## Open The UI
+
+On Windows, double-click:
+
+```text
+desktop_stock_machine/open_ui.cmd
+```
+
+The launcher opens `desktop_stock_machine/frontend/index.html` in the default
+browser. It does not start a server, write files, create `app_data/`, or connect
+to real data.
+
 ## Test
 
 From the repository root:

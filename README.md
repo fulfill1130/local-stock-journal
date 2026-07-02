@@ -49,6 +49,12 @@ Open this file in a browser:
 desktop_stock_machine/frontend/index.html
 ```
 
+On Windows, you can also double-click:
+
+```text
+desktop_stock_machine/open_ui.cmd
+```
+
 The UI is static HTML/CSS/JavaScript. It has no npm, no bundler, no external CDN,
 no backend calls, and no file writes.
 
